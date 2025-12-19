@@ -2,14 +2,18 @@
 // Hospital influencer collaboration platform
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
 }
 
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
+  schemas   = ["influencer"]
 }
+
+// 모든 모델은 influencer 스키마에 생성됨
 
 // ============================================
 // 인플루언서 (Influencer)
@@ -45,6 +49,7 @@ model Influencer {
   @@index([isActive])
   @@index([createdAt])
   @@map("influencers")
+  @@schema("influencer")
 }
 
 enum InfluencerTier {
@@ -52,6 +57,8 @@ enum InfluencerTier {
   GOLD
   SILVER
   BRONZE
+
+  @@schema("influencer")
 }
 
 // ============================================
@@ -76,6 +83,7 @@ model Channel {
   @@index([influencerId])
   @@index([platform])
   @@map("channels")
+  @@schema("influencer")
 }
 
 enum Platform {
@@ -87,6 +95,8 @@ enum Platform {
   FACEBOOK
   TWITTER
   OTHER
+
+  @@schema("influencer")
 }
 
 // ============================================
@@ -128,6 +138,7 @@ model Campaign {
   @@index([startDate])
   @@index([clientName])
   @@map("campaigns")
+  @@schema("influencer")
 }
 
 enum CampaignType {
@@ -136,6 +147,8 @@ enum CampaignType {
   EVENT           // 이벤트
   REVIEW          // 리뷰
   OTHER
+
+  @@schema("influencer")
 }
 
 enum CampaignStatus {
@@ -143,6 +156,8 @@ enum CampaignStatus {
   IN_PROGRESS     // 진행 중
   COMPLETED       // 완료
   CANCELLED       // 취소됨
+
+  @@schema("influencer")
 }
 
 // ============================================
@@ -185,6 +200,7 @@ model Collaboration {
   @@index([shootingDate])
   @@index([uploadDeadline])
   @@map("collaborations")
+  @@schema("influencer")
 }
 
 enum FeeType {
@@ -192,6 +208,8 @@ enum FeeType {
   PER_CONTENT     // 콘텐츠당
   REVENUE_SHARE   // 수익 분배
   BARTER          // 물물교환(시술 제공)
+
+  @@schema("influencer")
 }
 
 enum CollaborationStatus {
@@ -203,6 +221,8 @@ enum CollaborationStatus {
   UPLOADED        // 업로드 완료
   COMPLETED       // 협업 완료
   CANCELLED       // 취소됨
+
+  @@schema("influencer")
 }
 
 // ============================================
@@ -245,6 +265,7 @@ model Content {
   @@index([contentType])
   @@index([uploadedAt])
   @@map("contents")
+  @@schema("influencer")
 }
 
 enum ContentType {
@@ -254,4 +275,6 @@ enum ContentType {
   BLOG            // 블로그 글
   STORY           // 스토리
   OTHER
+
+  @@schema("influencer")
 }
