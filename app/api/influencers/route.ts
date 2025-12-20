@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { embedInfluencer } from '@/lib/ai/embeddings'
 
 // GET /api/influencers - 인플루언서 목록 조회
 export async function GET(request: NextRequest) {
@@ -67,6 +68,9 @@ export async function POST(request: NextRequest) {
         channels: true,
       },
     })
+
+    // 비동기로 임베딩 생성 (응답 지연 방지)
+    embedInfluencer(influencer.id).catch(console.error)
 
     return NextResponse.json(influencer, { status: 201 })
   } catch (error) {

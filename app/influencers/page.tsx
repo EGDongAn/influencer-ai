@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Search, Users, Eye } from 'lucide-react'
+import { Plus, Search, Users, Eye, Sparkles } from 'lucide-react'
 import {
   type InfluencerListItem,
   TIER_LABELS,
@@ -34,24 +34,61 @@ export default function InfluencersPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [tierFilter, setTierFilter] = useState<string>('all')
+  const [useAiSearch, setUseAiSearch] = useState(false)
 
   useEffect(() => {
     fetchInfluencers()
   }, [tierFilter])
 
+  // 검색어 또는 AI 검색 토글 변경 시 debounce 적용
+  useEffect(() => {
+    if (!search && !useAiSearch) return
+
+    const timer = setTimeout(() => {
+      fetchInfluencers()
+    }, 500)
+
+    return () => clearTimeout(timer)
+  }, [search, useAiSearch])
+
   const fetchInfluencers = async () => {
     try {
-      const params = new URLSearchParams()
-      if (tierFilter && tierFilter !== 'all') {
-        params.set('tier', tierFilter)
-      }
-      if (search) {
-        params.set('search', search)
-      }
+      setLoading(true)
 
-      const response = await fetch(`/api/influencers?${params}`)
-      const data = await response.json()
-      setInfluencers(data)
+      // AI 검색 사용 시
+      if (useAiSearch && search) {
+        const response = await fetch('/api/ai/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 'influencer',
+            query: search,
+            limit: 20,
+          }),
+        })
+        const data = await response.json()
+        let results = data.results || []
+
+        // 티어 필터 적용
+        if (tierFilter && tierFilter !== 'all') {
+          results = results.filter((inf: InfluencerListItem) => inf.tier === tierFilter)
+        }
+
+        setInfluencers(results)
+      } else {
+        // 일반 검색
+        const params = new URLSearchParams()
+        if (tierFilter && tierFilter !== 'all') {
+          params.set('tier', tierFilter)
+        }
+        if (search) {
+          params.set('search', search)
+        }
+
+        const response = await fetch(`/api/influencers?${params}`)
+        const data = await response.json()
+        setInfluencers(data)
+      }
     } catch (error) {
       console.error('Failed to fetch influencers:', error)
     } finally {
@@ -116,14 +153,30 @@ export default function InfluencersPage() {
       <Card>
         <CardContent className="pt-6">
           <form onSubmit={handleSearch} className="flex gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="이름 또는 활동명으로 검색..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="pl-10"
-              />
+            <div className="flex-1 flex gap-2">
+              <div className="flex-1 relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input
+                  placeholder={
+                    useAiSearch
+                      ? 'AI 검색으로 자연어 질문을 입력하세요...'
+                      : '이름 또는 활동명으로 검색...'
+                  }
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Button
+                type="button"
+                variant={useAiSearch ? 'default' : 'outline'}
+                size="icon"
+                onClick={() => setUseAiSearch(!useAiSearch)}
+                className={useAiSearch ? 'bg-purple-600 hover:bg-purple-700' : ''}
+                title={useAiSearch ? 'AI 검색 활성화됨' : 'AI 검색 비활성화됨'}
+              >
+                <Sparkles className="h-4 w-4" />
+              </Button>
             </div>
             <Select value={tierFilter} onValueChange={setTierFilter}>
               <SelectTrigger className="w-[150px]">

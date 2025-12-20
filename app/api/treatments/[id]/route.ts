@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { embedTreatment } from '@/lib/ai/embeddings'
 
 // GET /api/treatments/[id] - 시술 상세 조회
 export async function GET(
@@ -73,6 +74,9 @@ export async function PATCH(
         treatmentCategory: true,
       },
     })
+
+    // 비동기로 임베딩 갱신 (응답 지연 방지)
+    embedTreatment(treatment.id).catch(console.error)
 
     return NextResponse.json(treatment)
   } catch (error) {

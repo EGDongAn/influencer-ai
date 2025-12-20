@@ -39,6 +39,7 @@ import {
 import { InfluencerSelector } from '@/components/campaigns/InfluencerSelector'
 import { TreatmentSelector } from '@/components/treatments/TreatmentSelector'
 import { RoundSettings } from '@/components/treatments/RoundSettings'
+import { InfluencerRecommender } from '@/components/ai/influencer-recommender'
 
 interface SelectedInfluencer {
   id: string
@@ -57,8 +58,8 @@ interface SelectedTreatment {
 
 const STEPS = [
   { id: 1, title: '기본 정보', icon: Megaphone },
-  { id: 2, title: '인플루언서', icon: Users },
-  { id: 3, title: '시술 선택', icon: Syringe },
+  { id: 2, title: '시술 선택', icon: Syringe },
+  { id: 3, title: '인플루언서', icon: Users },
   { id: 4, title: '회차 설정', icon: Settings },
 ]
 
@@ -258,8 +259,8 @@ export default function NewCampaignPage() {
           </CardTitle>
           <CardDescription>
             {currentStep === 1 && '캠페인의 기본 정보를 입력하세요.'}
-            {currentStep === 2 && '캠페인에 참여할 인플루언서를 선택하세요. (나중에 추가 가능)'}
-            {currentStep === 3 && '캠페인에서 진행할 시술을 선택하세요. (나중에 추가 가능)'}
+            {currentStep === 2 && '캠페인에서 진행할 시술을 선택하세요. (나중에 추가 가능)'}
+            {currentStep === 3 && '캠페인에 참여할 인플루언서를 선택하세요. AI가 시술에 적합한 인플루언서를 추천합니다.'}
             {currentStep === 4 && '촬영 및 경과사진 회차를 설정하세요.'}
           </CardDescription>
         </CardHeader>
@@ -371,20 +372,55 @@ export default function NewCampaignPage() {
             </>
           )}
 
-          {/* Step 2: 인플루언서 선택 */}
+          {/* Step 2: 시술 선택 */}
           {currentStep === 2 && (
-            <InfluencerSelector
-              selectedIds={selectedInfluencerIds}
-              onChange={handleInfluencerChange}
-            />
-          )}
-
-          {/* Step 3: 시술 선택 */}
-          {currentStep === 3 && (
             <TreatmentSelector
               selectedIds={selectedTreatmentIds}
               onChange={handleTreatmentChange}
             />
+          )}
+
+          {/* Step 3: 인플루언서 선택 */}
+          {currentStep === 3 && (
+            <div className="space-y-6">
+              {/* AI 추천 섹션 */}
+              <InfluencerRecommender
+                treatmentIds={selectedTreatmentIds}
+                onSelect={(influencerId) => {
+                  // 토글 방식으로 선택/해제
+                  if (selectedInfluencerIds.includes(influencerId)) {
+                    setSelectedInfluencerIds((prev) => prev.filter((id) => id !== influencerId))
+                    setSelectedInfluencers((prev) => prev.filter((inf) => inf.id !== influencerId))
+                  } else {
+                    // 인플루언서 정보를 가져와서 추가
+                    fetch(`/api/influencers/${influencerId}`)
+                      .then((res) => res.json())
+                      .then((influencer) => {
+                        setSelectedInfluencerIds((prev) => [...prev, influencerId])
+                        setSelectedInfluencers((prev) => [
+                          ...prev,
+                          {
+                            id: influencer.id,
+                            name: influencer.name,
+                            nickname: influencer.nickname,
+                            tier: influencer.tier,
+                          },
+                        ])
+                      })
+                      .catch(console.error)
+                  }
+                }}
+                selectedInfluencerIds={selectedInfluencerIds}
+              />
+
+              {/* 기존 인플루언서 선택 */}
+              <div className="border-t pt-6">
+                <InfluencerSelector
+                  selectedIds={selectedInfluencerIds}
+                  onChange={handleInfluencerChange}
+                />
+              </div>
+            </div>
           )}
 
           {/* Step 4: 회차 설정 */}

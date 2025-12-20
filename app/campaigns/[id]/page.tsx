@@ -50,7 +50,11 @@ import {
   ChevronDown,
   ChevronUp,
   X,
+  Sparkles,
 } from 'lucide-react'
+import { ReviewGenerator } from '@/components/ai/review-generator'
+import { CreativeIdeaViewer } from '@/components/ai/creative-idea-viewer'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   type CampaignDetail,
   type InfluencerListItem,
@@ -96,6 +100,14 @@ export default function CampaignDetailPage({
   const [selectedCollaborationId, setSelectedCollaborationId] = useState<string | null>(null)
   const [expandedCollabs, setExpandedCollabs] = useState<Set<string>>(new Set())
   const [availableInfluencers, setAvailableInfluencers] = useState<InfluencerListItem[]>([])
+  const [reviewDialogOpen, setReviewDialogOpen] = useState(false)
+  const [selectedCollabForReview, setSelectedCollabForReview] = useState<{
+    collaborationId: string
+    treatmentId?: string
+    influencerId: string
+    treatmentName?: string
+    influencerName: string
+  } | null>(null)
 
   // 새 협업 폼 데이터
   const [newCollaboration, setNewCollaboration] = useState({
@@ -734,14 +746,35 @@ export default function CampaignDetailPage({
                       <div className="p-4 border-t">
                         <div className="flex items-center justify-between mb-3">
                           <h4 className="text-sm font-medium text-gray-700">일정 관리</h4>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => openAddScheduleDialog(collab.id)}
-                          >
-                            <Plus className="h-3 w-3 mr-1" />
-                            일정 추가
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="text-purple-600 border-purple-200 hover:bg-purple-50"
+                              onClick={() => {
+                                const treatment = collab.treatments?.[0]
+                                setSelectedCollabForReview({
+                                  collaborationId: collab.id,
+                                  treatmentId: treatment?.treatment?.id,
+                                  influencerId: collab.influencer.id,
+                                  treatmentName: treatment?.treatment?.name || treatment?.treatment?.nameKo || undefined,
+                                  influencerName: collab.influencer.name,
+                                })
+                                setReviewDialogOpen(true)
+                              }}
+                            >
+                              <Sparkles className="h-3 w-3 mr-1" />
+                              AI 후기 생성
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openAddScheduleDialog(collab.id)}
+                            >
+                              <Plus className="h-3 w-3 mr-1" />
+                              일정 추가
+                            </Button>
+                          </div>
                         </div>
 
                         {collabSchedules.length === 0 ? (
@@ -850,6 +883,19 @@ export default function CampaignDetailPage({
         </CardContent>
       </Card>
 
+      {/* AI 크리에이티브 아이디어 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-purple-600" />
+            AI 크리에이티브 아이디어
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <CreativeIdeaViewer campaignId={id} />
+        </CardContent>
+      </Card>
+
       {/* 일정 추가 다이얼로그 */}
       <Dialog open={addScheduleDialogOpen} onOpenChange={setAddScheduleDialogOpen}>
         <DialogContent>
@@ -934,6 +980,30 @@ export default function CampaignDetailPage({
             </Button>
             <Button onClick={handleAddSchedule}>추가</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI 후기 생성 다이얼로그 */}
+      <Dialog open={reviewDialogOpen} onOpenChange={setReviewDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-purple-600" />
+              AI 후기 생성
+            </DialogTitle>
+            <DialogDescription>
+              {selectedCollabForReview?.influencerName}님의 {selectedCollabForReview?.treatmentName || '시술'} 후기를 AI가 생성합니다.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedCollabForReview && (
+            <ReviewGenerator
+              collaborationId={selectedCollabForReview.collaborationId}
+              treatmentId={selectedCollabForReview.treatmentId}
+              influencerId={selectedCollabForReview.influencerId}
+              treatmentName={selectedCollabForReview.treatmentName}
+              influencerName={selectedCollabForReview.influencerName}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

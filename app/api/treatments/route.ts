@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { embedTreatment } from '@/lib/ai/embeddings'
 
 // GET /api/treatments - 시술 목록 조회
 export async function GET(request: NextRequest) {
@@ -104,6 +105,9 @@ export async function POST(request: NextRequest) {
         treatmentCategory: true,
       },
     })
+
+    // 비동기로 임베딩 생성 (응답 지연 방지)
+    embedTreatment(treatment.id).catch(console.error)
 
     return NextResponse.json(treatment, { status: 201 })
   } catch (error) {

@@ -24,6 +24,11 @@ export async function GET(
               },
             },
             contents: true,
+            treatments: {
+              include: {
+                treatment: true,
+              },
+            },
           },
           orderBy: { createdAt: 'desc' },
         },

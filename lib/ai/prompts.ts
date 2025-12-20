@@ -176,6 +176,29 @@ export const SYSTEM_PROMPTS = {
 - 수치 중심 분석
 - 시각적 구조화
 - 액션 아이템 명시`,
+
+  creative_idea: `당신은 뷰티/의료 마케팅 크리에이티브 디렉터입니다.
+캠페인 정보를 분석하여 효과적인 콘텐츠 전략을 제안합니다.
+
+다음 형식으로 응답하세요:
+
+## 📸 추천 사진 형태
+- (구체적인 촬영 스타일 3-5가지)
+
+## 🎬 촬영 주제 아이디어
+- (인플루언서별 맞춤 콘텐츠 주제 3-5가지)
+
+## 📝 콘텐츠 방향성
+- **톤앤매너**:
+- **키 메시지**:
+- **추천 해시태그**:
+
+## 📅 업로드 전략
+- **추천 요일/시간**:
+- **포스팅 간격**:
+
+## 💡 차별화 포인트
+- (경쟁 콘텐츠와 차별화할 수 있는 아이디어)`,
 }
 
 // 후기 생성을 위한 컨텍스트 빌더
@@ -240,6 +263,81 @@ export function buildReviewContext(params: {
 - 협업 형태: ${collaboration.feeType || 'BARTER'}
 ${collaboration.fee ? `- 협찬비: ${collaboration.fee.toLocaleString()}원` : ''}
 `
+  }
+
+  if (customPrompt) {
+    context += `
+## 추가 요청사항
+${customPrompt}
+`
+  }
+
+  return context.trim()
+}
+
+// 크리에이티브 아이디어 생성을 위한 컨텍스트 빌더
+export function buildCreativeIdeaContext(params: {
+  campaign?: {
+    name: string
+    clientName: string
+    description?: string
+    type?: string
+    startDate?: Date
+    endDate?: Date
+  }
+  collaborations?: Array<{
+    influencer: {
+      name: string
+      nickname?: string
+      tier?: string
+      category?: string[]
+      channels?: { platform: string; handle: string; followerCount?: number }[]
+    }
+    treatments?: Array<{
+      name: string
+      category?: string
+      description?: string
+      recoveryDays?: number
+    }>
+    fee?: number
+    feeType?: string
+  }>
+  customPrompt?: string
+}): string {
+  const { campaign, collaborations, customPrompt } = params
+
+  let context = ''
+
+  if (campaign) {
+    context += `
+## 캠페인 정보
+- 캠페인명: ${campaign.name}
+- 병원/클라이언트: ${campaign.clientName}
+- 유형: ${campaign.type || '협업'}
+- 설명: ${campaign.description || '정보 없음'}
+- 기간: ${campaign.startDate ? new Date(campaign.startDate).toLocaleDateString('ko-KR') : '정보 없음'} ~ ${campaign.endDate ? new Date(campaign.endDate).toLocaleDateString('ko-KR') : '정보 없음'}
+`
+  }
+
+  if (collaborations && collaborations.length > 0) {
+    context += `
+## 참여 인플루언서 (총 ${collaborations.length}명)
+`
+    collaborations.forEach((collab, idx) => {
+      const inf = collab.influencer
+      context += `
+### ${idx + 1}. ${inf.name}${inf.nickname ? ` (@${inf.nickname})` : ''}
+- 티어: ${inf.tier || '미분류'}
+- 카테고리: ${inf.category?.join(', ') || '정보 없음'}
+- 주요 채널: ${inf.channels?.map((c) => `${c.platform} (팔로워: ${c.followerCount?.toLocaleString() || '정보 없음'})`).join(', ') || '정보 없음'}
+- 협업 형태: ${collab.feeType || 'BARTER'}
+${collab.fee ? `- 협찬비: ${collab.fee.toLocaleString()}원` : ''}
+`
+
+      if (collab.treatments && collab.treatments.length > 0) {
+        context += `- 시술: ${collab.treatments.map((t) => t.name).join(', ')}\n`
+      }
+    })
   }
 
   if (customPrompt) {

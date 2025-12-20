@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { embedInfluencer } from '@/lib/ai/embeddings'
 
 type RouteContext = {
   params: Promise<{ id: string }>
@@ -70,6 +71,9 @@ export async function PUT(
         channels: true,
       },
     })
+
+    // 비동기로 임베딩 갱신 (응답 지연 방지)
+    embedInfluencer(influencer.id).catch(console.error)
 
     return NextResponse.json(influencer)
   } catch (error) {

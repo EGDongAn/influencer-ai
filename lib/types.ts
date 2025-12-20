@@ -6,6 +6,8 @@ import type {
   Collaboration,
   Content,
   Schedule,
+  Treatment,
+  CollaborationTreatment,
   InfluencerTier,
   Platform,
   CampaignType,
@@ -69,6 +71,9 @@ export type CampaignDetail = Campaign & {
       channels: Channel[]
     }
     contents: Content[]
+    treatments: (CollaborationTreatment & {
+      treatment: Treatment
+    })[]
   })[]
 }
 
