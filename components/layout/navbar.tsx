@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Menu, X, Users, Megaphone, LayoutDashboard, Calendar, Settings } from 'lucide-react'
+import { Menu, X, Users, Megaphone, LayoutDashboard, Calendar, Settings, Bot } from 'lucide-react'
 
 const navItems = [
   { href: '/', label: '대시보드', icon: LayoutDashboard },
@@ -12,6 +12,7 @@ const navItems = [
   { href: '/campaigns', label: '캠페인', icon: Megaphone },
   { href: '/board/kanban', label: '칸반보드', icon: LayoutDashboard },
   { href: '/board/calendar', label: '캘린더', icon: Calendar },
+  { href: '/ai', label: 'AI', icon: Bot },
   { href: '/settings', label: '설정', icon: Settings },
 ]
 

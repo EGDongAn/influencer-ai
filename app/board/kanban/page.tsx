@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -31,6 +31,7 @@ import {
   Clock,
   Plus,
   ChevronDown,
+  RefreshCw,
 } from 'lucide-react'
 import {
   type CollaborationWithRelations,
@@ -42,10 +43,24 @@ import {
   TIER_LABELS,
   TIER_COLORS,
   SCHEDULE_TYPE_LABELS,
-  SCHEDULE_TYPE_COLORS,
   SCHEDULE_STATUS_LABELS,
   SCHEDULE_STATUS_COLORS,
 } from '@/lib/types'
+import {
+  getScheduleColor,
+  formatDday,
+  formatRound,
+  sortSchedulesByPriority,
+} from '@/lib/schedule-colors'
+import {
+  useCollaborations,
+  updateCollaborationStatus,
+  invalidateCollaborations,
+} from '@/lib/hooks/useCollaborations'
+import {
+  useSchedules,
+  invalidateSchedules,
+} from '@/lib/hooks/useSchedules'
 
 // 칸반 컬럼 정의
 const KANBAN_COLUMNS: { status: CollaborationStatus; label: string }[] = [
@@ -59,35 +74,34 @@ const KANBAN_COLUMNS: { status: CollaborationStatus; label: string }[] = [
 ]
 
 export default function KanbanBoardPage() {
-  const [collaborations, setCollaborations] = useState<CollaborationWithRelations[]>([])
-  const [schedules, setSchedules] = useState<ScheduleWithRelations[]>([])
-  const [loading, setLoading] = useState(true)
+  // SWR 훅 사용
+  const {
+    collaborations: allCollaborations,
+    isLoading: collabLoading,
+    isValidating: collabValidating,
+  } = useCollaborations()
+  const {
+    schedules: allSchedules,
+    isLoading: scheduleLoading,
+    isValidating: scheduleValidating,
+  } = useSchedules()
+
+  const collaborations = useMemo(
+    () => (allCollaborations.filter((c) => c.status !== 'CANCELLED') as unknown) as CollaborationWithRelations[],
+    [allCollaborations]
+  )
+  const schedules = allSchedules as unknown as ScheduleWithRelations[]
+
+  const loading = collabLoading || scheduleLoading
+  const isValidating = collabValidating || scheduleValidating
+
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
   const [selectedCollab, setSelectedCollab] = useState<CollaborationWithRelations | null>(null)
   const [collabSchedules, setCollabSchedules] = useState<ScheduleWithRelations[]>([])
 
-  useEffect(() => {
-    fetchData()
-  }, [])
-
-  const fetchData = async () => {
-    try {
-      const [collabResponse, scheduleResponse] = await Promise.all([
-        fetch('/api/collaborations'),
-        fetch('/api/schedules'),
-      ])
-      const collabData = await collabResponse.json()
-      const scheduleData = await scheduleResponse.json()
-
-      setCollaborations(
-        collabData.filter((c: CollaborationWithRelations) => c.status !== 'CANCELLED')
-      )
-      setSchedules(Array.isArray(scheduleData) ? scheduleData : [])
-    } catch (error) {
-      console.error('Failed to fetch data:', error)
-    } finally {
-      setLoading(false)
-    }
+  const handleRefresh = () => {
+    invalidateCollaborations()
+    invalidateSchedules()
   }
 
   // 협업별 일정 맵
@@ -100,12 +114,9 @@ export default function KanbanBoardPage() {
       }
       map[collabId].push(schedule)
     })
-    // 각 협업의 일정을 날짜순으로 정렬
+    // 각 협업의 일정을 우선순위순으로 정렬 (D-day 기반)
     Object.keys(map).forEach((key) => {
-      map[key].sort(
-        (a, b) =>
-          new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
-      )
+      map[key] = sortSchedulesByPriority(map[key])
     })
     return map
   }, [schedules])
@@ -139,19 +150,7 @@ export default function KanbanBoardPage() {
     if (!draggedItem) return
 
     try {
-      const response = await fetch(`/api/collaborations/${draggedItem}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      })
-
-      if (response.ok) {
-        setCollaborations((prev) =>
-          prev.map((c) =>
-            c.id === draggedItem ? { ...c, status: newStatus } : c
-          )
-        )
-      }
+      await updateCollaborationStatus(draggedItem, newStatus)
     } catch (error) {
       console.error('Failed to update status:', error)
     } finally {
@@ -164,19 +163,7 @@ export default function KanbanBoardPage() {
     newStatus: CollaborationStatus
   ) => {
     try {
-      const response = await fetch(`/api/collaborations/${collaborationId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      })
-
-      if (response.ok) {
-        setCollaborations((prev) =>
-          prev.map((c) =>
-            c.id === collaborationId ? { ...c, status: newStatus } : c
-          )
-        )
-      }
+      await updateCollaborationStatus(collaborationId, newStatus)
     } catch (error) {
       console.error('Failed to update status:', error)
     }
@@ -256,9 +243,19 @@ export default function KanbanBoardPage() {
           <h1 className="text-3xl font-bold">칸반 보드</h1>
           <p className="text-gray-600 mt-1">
             협업 진행 상태를 드래그 앤 드롭으로 관리하세요
+            {isValidating && (
+              <span className="ml-2 text-blue-500 text-sm">
+                <RefreshCw className="h-3 w-3 inline animate-spin mr-1" />
+                동기화 중...
+              </span>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={handleRefresh} disabled={isValidating}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isValidating ? 'animate-spin' : ''}`} />
+            새로고침
+          </Button>
           <Link href="/board/calendar">
             <Button variant="outline">
               <Calendar className="h-4 w-4 mr-2" />
@@ -388,23 +385,32 @@ export default function KanbanBoardPage() {
                               {collab.campaign.name}
                             </Link>
 
-                            {/* 일정 정보 */}
+                            {/* 일정 정보 - D-day 기반 동적 색상 */}
                             {collabScheduleList.length > 0 && (
                               <div className="mt-2 space-y-1">
                                 {upcomingSchedule ? (
-                                  <div
-                                    className={`text-xs p-1.5 rounded flex items-center gap-1.5 ${
-                                      SCHEDULE_TYPE_COLORS[upcomingSchedule.type]
-                                    }`}
-                                  >
-                                    {getTypeIcon(upcomingSchedule.type)}
-                                    <span>
-                                      {SCHEDULE_TYPE_LABELS[upcomingSchedule.type]}
-                                    </span>
-                                    <span className="text-gray-600">
-                                      {formatDate(upcomingSchedule.scheduledDate)}
-                                    </span>
-                                  </div>
+                                  (() => {
+                                    const colorConfig = getScheduleColor(upcomingSchedule)
+                                    const ddayText = formatDday(upcomingSchedule)
+                                    const roundText = formatRound(
+                                      upcomingSchedule.roundNumber,
+                                      upcomingSchedule.totalRounds
+                                    )
+                                    return (
+                                      <div
+                                        className={`text-xs p-1.5 rounded border flex items-center gap-1.5 ${colorConfig.bg} ${colorConfig.text} ${colorConfig.border}`}
+                                      >
+                                        {getTypeIcon(upcomingSchedule.type)}
+                                        <span>
+                                          {SCHEDULE_TYPE_LABELS[upcomingSchedule.type]}
+                                          {roundText && ` (${roundText})`}
+                                        </span>
+                                        <span className="ml-auto font-medium">
+                                          {ddayText}
+                                        </span>
+                                      </div>
+                                    )
+                                  })()
                                 ) : (
                                   <div className="text-xs text-gray-400">
                                     예정된 일정 없음
@@ -502,39 +508,53 @@ export default function KanbanBoardPage() {
                   </div>
                 ) : (
                   <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                    {collabSchedules.map((schedule) => (
-                      <div
-                        key={schedule.id}
-                        className="p-3 border rounded-lg space-y-2"
-                      >
-                        <div className="flex items-center justify-between">
-                          <Badge className={SCHEDULE_TYPE_COLORS[schedule.type]}>
-                            {getTypeIcon(schedule.type)}
-                            <span className="ml-1">
-                              {SCHEDULE_TYPE_LABELS[schedule.type]}
-                            </span>
-                          </Badge>
-                          <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
-                            {SCHEDULE_STATUS_LABELS[schedule.status]}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <Clock className="h-4 w-4" />
-                          {formatDateTime(
-                            schedule.scheduledDate,
-                            schedule.scheduledTime
+                    {collabSchedules.map((schedule) => {
+                      const colorConfig = getScheduleColor(schedule)
+                      const ddayText = formatDday(schedule)
+                      const roundText = formatRound(
+                        schedule.roundNumber,
+                        schedule.totalRounds
+                      )
+                      return (
+                        <div
+                          key={schedule.id}
+                          className={`p-3 rounded-lg border space-y-2 ${colorConfig.bg} ${colorConfig.border}`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Badge className={`${colorConfig.badge} text-white`}>
+                                {getTypeIcon(schedule.type)}
+                                <span className="ml-1">
+                                  {SCHEDULE_TYPE_LABELS[schedule.type]}
+                                  {roundText && ` (${roundText})`}
+                                </span>
+                              </Badge>
+                              <span className={`text-sm font-bold ${colorConfig.text}`}>
+                                {ddayText}
+                              </span>
+                            </div>
+                            <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
+                              {SCHEDULE_STATUS_LABELS[schedule.status]}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <Clock className="h-4 w-4" />
+                            {formatDateTime(
+                              schedule.scheduledDate,
+                              schedule.scheduledTime
+                            )}
+                          </div>
+                          {schedule.title && (
+                            <div className="text-sm font-medium">{schedule.title}</div>
+                          )}
+                          {schedule.notes && (
+                            <div className="text-xs text-gray-500 bg-white/50 p-2 rounded">
+                              {schedule.notes}
+                            </div>
                           )}
                         </div>
-                        {schedule.title && (
-                          <div className="text-sm font-medium">{schedule.title}</div>
-                        )}
-                        {schedule.notes && (
-                          <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
-                            {schedule.notes}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 )}
               </div>

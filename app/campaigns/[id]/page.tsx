@@ -72,6 +72,13 @@ import {
   SCHEDULE_STATUS_LABELS,
   SCHEDULE_STATUS_COLORS,
 } from '@/lib/types'
+import { TreatmentSelector } from '@/components/treatments/TreatmentSelector'
+import { RoundSettings } from '@/components/treatments/RoundSettings'
+import {
+  getScheduleColor,
+  formatDday,
+  formatRound,
+} from '@/lib/schedule-colors'
 
 export default function CampaignDetailPage({
   params,
@@ -96,6 +103,10 @@ export default function CampaignDetailPage({
     fee: '',
     feeType: 'FIXED' as FeeType,
     status: 'CONTACTED' as CollaborationStatus,
+    shootingRounds: 1,
+    progressRounds: 2,
+    treatmentIds: [] as string[],
+    createSchedules: true,
   })
 
   // 새 일정 폼 데이터
@@ -189,6 +200,10 @@ export default function CampaignDetailPage({
           fee: newCollaboration.fee ? parseFloat(newCollaboration.fee) : null,
           feeType: newCollaboration.feeType,
           status: newCollaboration.status,
+          shootingRounds: newCollaboration.shootingRounds,
+          progressRounds: newCollaboration.progressRounds,
+          treatmentIds: newCollaboration.treatmentIds,
+          createSchedules: newCollaboration.createSchedules,
         }),
       })
 
@@ -199,6 +214,10 @@ export default function CampaignDetailPage({
           fee: '',
           feeType: 'FIXED',
           status: 'CONTACTED',
+          shootingRounds: 1,
+          progressRounds: 2,
+          treatmentIds: [],
+          createSchedules: true,
         })
         fetchData()
       } else {
@@ -512,14 +531,15 @@ export default function CampaignDetailPage({
                 인플루언서 추가
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>인플루언서 추가</DialogTitle>
                 <DialogDescription>
-                  이 캠페인에 참여할 인플루언서를 추가하세요.
+                  이 캠페인에 참여할 인플루언서와 시술, 일정을 설정하세요.
                 </DialogDescription>
               </DialogHeader>
-              <div className="space-y-4">
+              <div className="space-y-6">
+                {/* 인플루언서 선택 */}
                 <div className="space-y-2">
                   <Label>인플루언서 *</Label>
                   <Select
@@ -543,6 +563,52 @@ export default function CampaignDetailPage({
                   </Select>
                 </div>
 
+                {/* 시술 선택 */}
+                <div className="space-y-2">
+                  <Label>시술 선택</Label>
+                  <TreatmentSelector
+                    selectedIds={newCollaboration.treatmentIds}
+                    onChange={(ids) =>
+                      setNewCollaboration((prev) => ({ ...prev, treatmentIds: ids }))
+                    }
+                  />
+                </div>
+
+                {/* 회차 설정 */}
+                <div className="space-y-2">
+                  <Label>회차 설정</Label>
+                  <RoundSettings
+                    shootingRounds={newCollaboration.shootingRounds}
+                    progressRounds={newCollaboration.progressRounds}
+                    onShootingChange={(value) =>
+                      setNewCollaboration((prev) => ({ ...prev, shootingRounds: value }))
+                    }
+                    onProgressChange={(value) =>
+                      setNewCollaboration((prev) => ({ ...prev, progressRounds: value }))
+                    }
+                  />
+                </div>
+
+                {/* 자동 일정 생성 */}
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="createSchedules"
+                    checked={newCollaboration.createSchedules}
+                    onChange={(e) =>
+                      setNewCollaboration((prev) => ({
+                        ...prev,
+                        createSchedules: e.target.checked,
+                      }))
+                    }
+                    className="rounded border-gray-300"
+                  />
+                  <Label htmlFor="createSchedules" className="text-sm font-normal">
+                    일정 템플릿 자동 생성 (날짜는 추후 수정 가능)
+                  </Label>
+                </div>
+
+                {/* 협찬비 */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>협찬비</Label>
@@ -686,73 +752,91 @@ export default function CampaignDetailPage({
                           <Table>
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="w-[120px]">유형</TableHead>
+                                <TableHead className="w-[150px]">유형</TableHead>
                                 <TableHead>제목</TableHead>
                                 <TableHead>일시</TableHead>
+                                <TableHead className="w-[80px]">D-day</TableHead>
                                 <TableHead className="w-[140px]">상태</TableHead>
                                 <TableHead className="w-[60px]"></TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
-                              {collabSchedules.map((schedule) => (
-                                <TableRow key={schedule.id}>
-                                  <TableCell>
-                                    <Badge className={SCHEDULE_TYPE_COLORS[schedule.type]}>
-                                      {getTypeIcon(schedule.type)}
-                                      <span className="ml-1">
-                                        {SCHEDULE_TYPE_LABELS[schedule.type]}
+                              {collabSchedules.map((schedule) => {
+                                const colorConfig = getScheduleColor(schedule)
+                                const ddayText = formatDday(schedule)
+                                const roundText = formatRound(
+                                  schedule.roundNumber,
+                                  schedule.totalRounds
+                                )
+                                return (
+                                  <TableRow
+                                    key={schedule.id}
+                                    className={colorConfig.bg}
+                                  >
+                                    <TableCell>
+                                      <Badge className={`${colorConfig.badge} text-white`}>
+                                        {getTypeIcon(schedule.type)}
+                                        <span className="ml-1">
+                                          {SCHEDULE_TYPE_LABELS[schedule.type]}
+                                          {roundText && ` (${roundText})`}
+                                        </span>
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell>
+                                      {schedule.title || '-'}
+                                      {schedule.notes && (
+                                        <p className="text-xs text-gray-400 mt-1 truncate max-w-[200px]">
+                                          {schedule.notes}
+                                        </p>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      <div className="flex items-center gap-1 text-sm">
+                                        <Clock className="h-3 w-3 text-gray-400" />
+                                        {formatDateTime(schedule.scheduledDate, schedule.scheduledTime)}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell>
+                                      <span className={`font-bold ${colorConfig.text}`}>
+                                        {ddayText}
                                       </span>
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell>
-                                    {schedule.title || '-'}
-                                    {schedule.notes && (
-                                      <p className="text-xs text-gray-400 mt-1 truncate max-w-[200px]">
-                                        {schedule.notes}
-                                      </p>
-                                    )}
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="flex items-center gap-1 text-sm">
-                                      <Clock className="h-3 w-3 text-gray-400" />
-                                      {formatDateTime(schedule.scheduledDate, schedule.scheduledTime)}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Select
-                                      value={schedule.status}
-                                      onValueChange={(value: ScheduleStatus) =>
-                                        handleUpdateScheduleStatus(schedule.id, value)
-                                      }
-                                    >
-                                      <SelectTrigger className="h-7 text-xs">
-                                        <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
-                                          {SCHEDULE_STATUS_LABELS[schedule.status]}
-                                        </Badge>
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {(Object.keys(SCHEDULE_STATUS_LABELS) as ScheduleStatus[]).map(
-                                          (status) => (
-                                            <SelectItem key={status} value={status}>
-                                              {SCHEDULE_STATUS_LABELS[status]}
-                                            </SelectItem>
-                                          )
-                                        )}
-                                      </SelectContent>
-                                    </Select>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7 text-gray-400 hover:text-red-500"
-                                      onClick={() => handleDeleteSchedule(schedule.id)}
-                                    >
-                                      <X className="h-4 w-4" />
-                                    </Button>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Select
+                                        value={schedule.status}
+                                        onValueChange={(value: ScheduleStatus) =>
+                                          handleUpdateScheduleStatus(schedule.id, value)
+                                        }
+                                      >
+                                        <SelectTrigger className="h-7 text-xs">
+                                          <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
+                                            {SCHEDULE_STATUS_LABELS[schedule.status]}
+                                          </Badge>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {(Object.keys(SCHEDULE_STATUS_LABELS) as ScheduleStatus[]).map(
+                                            (status) => (
+                                              <SelectItem key={status} value={status}>
+                                                {SCHEDULE_STATUS_LABELS[status]}
+                                              </SelectItem>
+                                            )
+                                          )}
+                                        </SelectContent>
+                                      </Select>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7 text-gray-400 hover:text-red-500"
+                                        onClick={() => handleDeleteSchedule(schedule.id)}
+                                      >
+                                        <X className="h-4 w-4" />
+                                      </Button>
+                                    </TableCell>
+                                  </TableRow>
+                                )
+                              })}
                             </TableBody>
                           </Table>
                         )}

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -22,8 +22,8 @@ import {
   FileCheck,
   Calendar as CalendarIcon,
   Clock,
-  Plus,
   MoreHorizontal,
+  RefreshCw,
 } from 'lucide-react'
 import {
   type ScheduleWithRelations,
@@ -32,38 +32,39 @@ import {
   SCHEDULE_TYPE_COLORS,
   SCHEDULE_STATUS_LABELS,
   SCHEDULE_STATUS_COLORS,
-  TIER_COLORS,
 } from '@/lib/types'
+import {
+  getScheduleColor,
+  formatDday,
+  formatRound,
+  sortSchedulesByPriority,
+} from '@/lib/schedule-colors'
+import {
+  useSchedules,
+  invalidateSchedules,
+} from '@/lib/hooks/useSchedules'
 
 export default function CalendarPage() {
-  const [schedules, setSchedules] = useState<ScheduleWithRelations[]>([])
-  const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [selectedSchedules, setSelectedSchedules] = useState<ScheduleWithRelations[]>([])
 
-  useEffect(() => {
-    fetchSchedules()
-  }, [currentDate])
+  // SWR 훅 사용 - 현재 달의 일정 조회
+  const year = currentDate.getFullYear()
+  const month = currentDate.getMonth()
+  const startDate = new Date(year, month, 1).toISOString().split('T')[0]
+  const endDate = new Date(year, month + 1, 0).toISOString().split('T')[0]
 
-  const fetchSchedules = async () => {
-    try {
-      const year = currentDate.getFullYear()
-      const month = currentDate.getMonth()
-      const startDate = new Date(year, month, 1).toISOString()
-      const endDate = new Date(year, month + 1, 0).toISOString()
+  const {
+    schedules: allSchedules,
+    isLoading: loading,
+    isValidating,
+  } = useSchedules({ startDate, endDate })
 
-      const response = await fetch(
-        `/api/schedules?startDate=${startDate}&endDate=${endDate}`
-      )
-      const data = await response.json()
-      setSchedules(Array.isArray(data) ? data : [])
-    } catch (error) {
-      console.error('Failed to fetch schedules:', error)
-      setSchedules([])
-    } finally {
-      setLoading(false)
-    }
+  const schedules = allSchedules as unknown as ScheduleWithRelations[]
+
+  const handleRefresh = () => {
+    invalidateSchedules({ startDate, endDate })
   }
 
   // 달력 데이터 생성
@@ -203,9 +204,19 @@ export default function CalendarPage() {
           <h1 className="text-3xl font-bold">일정 캘린더</h1>
           <p className="text-gray-600 mt-1">
             촬영, 경과사진, 업로드 일정을 한눈에 확인하세요
+            {isValidating && (
+              <span className="ml-2 text-blue-500 text-sm">
+                <RefreshCw className="h-3 w-3 inline animate-spin mr-1" />
+                동기화 중...
+              </span>
+            )}
           </p>
         </div>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={handleRefresh} disabled={isValidating}>
+            <RefreshCw className={`h-4 w-4 mr-2 ${isValidating ? 'animate-spin' : ''}`} />
+            새로고침
+          </Button>
           <Link href="/board/kanban">
             <Button variant="outline">
               <LayoutGrid className="h-4 w-4 mr-2" />
@@ -292,19 +303,31 @@ export default function CalendarPage() {
                         )}
                       </div>
                       <div className="space-y-1">
-                        {daySchedules.slice(0, 3).map((schedule) => (
-                          <div
-                            key={schedule.id}
-                            className={`text-xs p-1 rounded border truncate ${SCHEDULE_TYPE_COLORS[schedule.type]}`}
-                          >
-                            <div className="flex items-center gap-1">
-                              {getTypeIcon(schedule.type)}
-                              <span className="truncate">
-                                {schedule.title || schedule.collaboration.influencer.name}
-                              </span>
+                        {sortSchedulesByPriority(daySchedules).slice(0, 3).map((schedule) => {
+                          const colorConfig = getScheduleColor(schedule)
+                          const ddayText = formatDday(schedule)
+                          const roundText = formatRound(
+                            schedule.roundNumber,
+                            schedule.totalRounds
+                          )
+                          return (
+                            <div
+                              key={schedule.id}
+                              className={`text-xs p-1 rounded border truncate ${colorConfig.bg} ${colorConfig.text} ${colorConfig.border}`}
+                            >
+                              <div className="flex items-center gap-1">
+                                {getTypeIcon(schedule.type)}
+                                <span className="truncate flex-1">
+                                  {schedule.title || schedule.collaboration.influencer.name}
+                                  {roundText && ` (${roundText})`}
+                                </span>
+                                <span className="font-semibold text-[10px]">
+                                  {ddayText}
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                         {hasMore && (
                           <div className="text-xs text-gray-500 text-center flex items-center justify-center gap-1">
                             <MoreHorizontal className="h-3 w-3" />
@@ -348,43 +371,57 @@ export default function CalendarPage() {
                       })}
                     </div>
                     <div className="space-y-2">
-                      {dateSchedules.map((schedule) => (
-                        <div
-                          key={schedule.id}
-                          className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50"
-                        >
-                          <Badge className={SCHEDULE_TYPE_COLORS[schedule.type]}>
-                            {getTypeIcon(schedule.type)}
-                            <span className="ml-1">{SCHEDULE_TYPE_LABELS[schedule.type]}</span>
-                          </Badge>
-                          {schedule.scheduledTime && (
-                            <div className="flex items-center gap-1 text-sm text-gray-500">
-                              <Clock className="h-3 w-3" />
-                              {schedule.scheduledTime}
-                            </div>
-                          )}
-                          <div className="flex-1">
-                            <Link
-                              href={`/influencers/${schedule.collaboration.influencer.id}`}
-                              className="font-medium hover:underline"
-                            >
-                              {schedule.collaboration.influencer.nickname || schedule.collaboration.influencer.name}
-                            </Link>
-                            {schedule.title && (
-                              <span className="text-gray-500 ml-2">- {schedule.title}</span>
-                            )}
-                          </div>
-                          <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
-                            {SCHEDULE_STATUS_LABELS[schedule.status]}
-                          </Badge>
-                          <Link
-                            href={`/campaigns/${schedule.collaboration.campaign.id}`}
-                            className="text-sm text-gray-500 hover:underline"
+                      {sortSchedulesByPriority(dateSchedules).map((schedule) => {
+                        const colorConfig = getScheduleColor(schedule)
+                        const ddayText = formatDday(schedule)
+                        const roundText = formatRound(
+                          schedule.roundNumber,
+                          schedule.totalRounds
+                        )
+                        return (
+                          <div
+                            key={schedule.id}
+                            className={`flex items-center gap-3 p-3 rounded-lg border ${colorConfig.bg} ${colorConfig.border}`}
                           >
-                            {schedule.collaboration.campaign.name}
-                          </Link>
-                        </div>
-                      ))}
+                            <Badge className={`${colorConfig.badge} text-white`}>
+                              {getTypeIcon(schedule.type)}
+                              <span className="ml-1">
+                                {SCHEDULE_TYPE_LABELS[schedule.type]}
+                                {roundText && ` (${roundText})`}
+                              </span>
+                            </Badge>
+                            <span className={`font-bold text-sm ${colorConfig.text}`}>
+                              {ddayText}
+                            </span>
+                            {schedule.scheduledTime && (
+                              <div className="flex items-center gap-1 text-sm text-gray-500">
+                                <Clock className="h-3 w-3" />
+                                {schedule.scheduledTime}
+                              </div>
+                            )}
+                            <div className="flex-1">
+                              <Link
+                                href={`/influencers/${schedule.collaboration.influencer.id}`}
+                                className="font-medium hover:underline"
+                              >
+                                {schedule.collaboration.influencer.nickname || schedule.collaboration.influencer.name}
+                              </Link>
+                              {schedule.title && (
+                                <span className="text-gray-500 ml-2">- {schedule.title}</span>
+                              )}
+                            </div>
+                            <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
+                              {SCHEDULE_STATUS_LABELS[schedule.status]}
+                            </Badge>
+                            <Link
+                              href={`/campaigns/${schedule.collaboration.campaign.id}`}
+                              className="text-sm text-gray-500 hover:underline"
+                            >
+                              {schedule.collaboration.campaign.name}
+                            </Link>
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
                 ))}
@@ -407,50 +444,66 @@ export default function CalendarPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 max-h-[400px] overflow-y-auto">
-            {selectedSchedules.map((schedule) => (
-              <div
-                key={schedule.id}
-                className="p-3 border rounded-lg space-y-2"
-              >
-                <div className="flex items-center justify-between">
-                  <Badge className={SCHEDULE_TYPE_COLORS[schedule.type]}>
-                    {getTypeIcon(schedule.type)}
-                    <span className="ml-1">{SCHEDULE_TYPE_LABELS[schedule.type]}</span>
-                  </Badge>
-                  <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
-                    {SCHEDULE_STATUS_LABELS[schedule.status]}
-                  </Badge>
-                </div>
-                {schedule.scheduledTime && (
-                  <div className="flex items-center gap-1 text-sm text-gray-600">
-                    <Clock className="h-4 w-4" />
-                    {schedule.scheduledTime}
+            {sortSchedulesByPriority(selectedSchedules).map((schedule) => {
+              const colorConfig = getScheduleColor(schedule)
+              const ddayText = formatDday(schedule)
+              const roundText = formatRound(
+                schedule.roundNumber,
+                schedule.totalRounds
+              )
+              return (
+                <div
+                  key={schedule.id}
+                  className={`p-3 rounded-lg border space-y-2 ${colorConfig.bg} ${colorConfig.border}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Badge className={`${colorConfig.badge} text-white`}>
+                        {getTypeIcon(schedule.type)}
+                        <span className="ml-1">
+                          {SCHEDULE_TYPE_LABELS[schedule.type]}
+                          {roundText && ` (${roundText})`}
+                        </span>
+                      </Badge>
+                      <span className={`font-bold text-sm ${colorConfig.text}`}>
+                        {ddayText}
+                      </span>
+                    </div>
+                    <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
+                      {SCHEDULE_STATUS_LABELS[schedule.status]}
+                    </Badge>
                   </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <Link
-                    href={`/influencers/${schedule.collaboration.influencer.id}`}
-                    className="font-medium hover:underline"
-                  >
-                    {schedule.collaboration.influencer.nickname || schedule.collaboration.influencer.name}
-                  </Link>
-                  <Link
-                    href={`/campaigns/${schedule.collaboration.campaign.id}`}
-                    className="text-sm text-blue-600 hover:underline"
-                  >
-                    {schedule.collaboration.campaign.name}
-                  </Link>
-                </div>
-                {schedule.title && (
-                  <div className="text-sm text-gray-600">{schedule.title}</div>
-                )}
-                {schedule.notes && (
-                  <div className="text-sm text-gray-500 bg-gray-50 p-2 rounded">
-                    {schedule.notes}
+                  {schedule.scheduledTime && (
+                    <div className="flex items-center gap-1 text-sm text-gray-600">
+                      <Clock className="h-4 w-4" />
+                      {schedule.scheduledTime}
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <Link
+                      href={`/influencers/${schedule.collaboration.influencer.id}`}
+                      className="font-medium hover:underline"
+                    >
+                      {schedule.collaboration.influencer.nickname || schedule.collaboration.influencer.name}
+                    </Link>
+                    <Link
+                      href={`/campaigns/${schedule.collaboration.campaign.id}`}
+                      className="text-sm text-blue-600 hover:underline"
+                    >
+                      {schedule.collaboration.campaign.name}
+                    </Link>
                   </div>
-                )}
-              </div>
-            ))}
+                  {schedule.title && (
+                    <div className="text-sm text-gray-600">{schedule.title}</div>
+                  )}
+                  {schedule.notes && (
+                    <div className="text-sm text-gray-500 bg-white/50 p-2 rounded">
+                      {schedule.notes}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </DialogContent>
       </Dialog>
