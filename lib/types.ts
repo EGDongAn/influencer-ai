@@ -5,6 +5,7 @@ import type {
   Campaign,
   Collaboration,
   Content,
+  Schedule,
   InfluencerTier,
   Platform,
   CampaignType,
@@ -12,6 +13,8 @@ import type {
   CollaborationStatus,
   FeeType,
   ContentType,
+  ScheduleType,
+  ScheduleStatus,
 } from '@prisma/client'
 
 // Re-export Prisma enums
@@ -23,7 +26,12 @@ export type {
   CollaborationStatus,
   FeeType,
   ContentType,
+  ScheduleType,
+  ScheduleStatus,
 }
+
+// Re-export Prisma models
+export type { Schedule }
 
 // 인플루언서 with relations
 export type InfluencerWithChannels = Influencer & {
@@ -71,11 +79,21 @@ export type CollaborationWithRelations = Collaboration & {
     channels: Channel[]
   }
   contents: Content[]
+  schedules: Schedule[]
 }
 
 export type CollaborationForKanban = Collaboration & {
   campaign: Pick<Campaign, 'id' | 'name' | 'clientName'>
   influencer: Pick<Influencer, 'id' | 'name' | 'nickname' | 'tier' | 'profileImageUrl'>
+  schedules: Schedule[]
+}
+
+// 스케줄 with relations
+export type ScheduleWithRelations = Schedule & {
+  collaboration: Collaboration & {
+    campaign: Pick<Campaign, 'id' | 'name' | 'clientName'>
+    influencer: Pick<Influencer, 'id' | 'name' | 'nickname'>
+  }
 }
 
 // 대시보드 타입
@@ -103,10 +121,7 @@ export interface DashboardStats {
     comments: number
   }
   activeCollaborations: CollaborationForKanban[]
-  upcomingSchedules: (Collaboration & {
-    campaign: Pick<Campaign, 'id' | 'name'>
-    influencer: Pick<Influencer, 'id' | 'name' | 'nickname'>
-  })[]
+  upcomingSchedules: ScheduleWithRelations[]
 }
 
 // 폼 데이터 타입
@@ -227,4 +242,50 @@ export const FEE_TYPE_LABELS: Record<FeeType, string> = {
   PER_CONTENT: '콘텐츠당',
   REVENUE_SHARE: '수익 분배',
   BARTER: '시술 제공',
+}
+
+export const SCHEDULE_TYPE_LABELS: Record<ScheduleType, string> = {
+  SHOOTING: '촬영',
+  PROGRESS: '경과 사진',
+  UPLOAD: '업로드',
+  MEETING: '미팅',
+  REVIEW: '검토',
+  OTHER: '기타',
+}
+
+export const SCHEDULE_TYPE_COLORS: Record<ScheduleType, string> = {
+  SHOOTING: 'bg-purple-100 text-purple-800 border-purple-300',
+  PROGRESS: 'bg-blue-100 text-blue-800 border-blue-300',
+  UPLOAD: 'bg-green-100 text-green-800 border-green-300',
+  MEETING: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  REVIEW: 'bg-orange-100 text-orange-800 border-orange-300',
+  OTHER: 'bg-gray-100 text-gray-800 border-gray-300',
+}
+
+export const SCHEDULE_STATUS_LABELS: Record<ScheduleStatus, string> = {
+  SCHEDULED: '예정됨',
+  CONFIRMED: '확정됨',
+  IN_PROGRESS: '진행 중',
+  COMPLETED: '완료',
+  CANCELLED: '취소',
+  RESCHEDULED: '일정 변경',
+}
+
+export const SCHEDULE_STATUS_COLORS: Record<ScheduleStatus, string> = {
+  SCHEDULED: 'bg-blue-100 text-blue-800',
+  CONFIRMED: 'bg-green-100 text-green-800',
+  IN_PROGRESS: 'bg-yellow-100 text-yellow-800',
+  COMPLETED: 'bg-gray-100 text-gray-800',
+  CANCELLED: 'bg-red-100 text-red-800',
+  RESCHEDULED: 'bg-orange-100 text-orange-800',
+}
+
+// 스케줄 폼 데이터
+export interface ScheduleFormData {
+  collaborationId: string
+  type: ScheduleType
+  title?: string
+  scheduledDate: string
+  scheduledTime?: string
+  notes?: string
 }

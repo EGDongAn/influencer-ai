@@ -176,10 +176,8 @@ model Collaboration {
   fee             Decimal?            @db.Decimal(12, 0)  // 협찬비
   feeType         FeeType             @default(FIXED)
 
-  // 일정
-  shootingDate    DateTime?           // 촬영일
-  progressDate    DateTime?           // 경과사진 일자
-  uploadDeadline  DateTime?           // 업로드 마감일
+  // 일정 (다중 스케줄 지원)
+  schedules       Schedule[]
 
   // 진행 상태 (칸반 보드용)
   status          CollaborationStatus @default(CONTACTED)
@@ -197,8 +195,6 @@ model Collaboration {
   @@index([campaignId])
   @@index([influencerId])
   @@index([status])
-  @@index([shootingDate])
-  @@index([uploadDeadline])
   @@map("collaborations")
   @@schema("influencer")
 }
@@ -221,6 +217,63 @@ enum CollaborationStatus {
   UPLOADED        // 업로드 완료
   COMPLETED       // 협업 완료
   CANCELLED       // 취소됨
+
+  @@schema("influencer")
+}
+
+// ============================================
+// 스케줄 (Schedule) - 협업 일정 관리
+// ============================================
+model Schedule {
+  id              String         @id @default(cuid())
+
+  collaborationId String
+  collaboration   Collaboration  @relation(fields: [collaborationId], references: [id], onDelete: Cascade)
+
+  // 일정 유형
+  type            ScheduleType
+  title           String?        // 일정 제목 (선택)
+
+  // 일정 시간
+  scheduledDate   DateTime       // 예정일
+  scheduledTime   String?        // 예정 시간 (HH:mm 형식)
+
+  // 상태
+  status          ScheduleStatus @default(SCHEDULED)
+  completedAt     DateTime?      // 완료일
+
+  // 메모
+  notes           String?
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([collaborationId])
+  @@index([type])
+  @@index([scheduledDate])
+  @@index([status])
+  @@map("schedules")
+  @@schema("influencer")
+}
+
+enum ScheduleType {
+  SHOOTING        // 촬영
+  PROGRESS        // 경과 사진
+  UPLOAD          // 업로드
+  MEETING         // 미팅
+  REVIEW          // 검토
+  OTHER           // 기타
+
+  @@schema("influencer")
+}
+
+enum ScheduleStatus {
+  SCHEDULED       // 예정됨
+  CONFIRMED       // 확정됨
+  IN_PROGRESS     // 진행 중
+  COMPLETED       // 완료
+  CANCELLED       // 취소
+  RESCHEDULED     // 일정 변경
 
   @@schema("influencer")
 }

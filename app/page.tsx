@@ -4,14 +4,17 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Users, Megaphone, Calendar, TrendingUp, Plus, Camera, Upload, ArrowRight } from 'lucide-react'
+import { Users, Megaphone, Calendar, TrendingUp, Plus, Camera, Upload, ArrowRight, Image, FileCheck, Clock } from 'lucide-react'
 import Link from 'next/link'
 import {
   type DashboardStats,
+  type ScheduleType,
   TIER_LABELS,
   TIER_COLORS,
   COLLABORATION_STATUS_LABELS,
   COLLABORATION_STATUS_COLORS,
+  SCHEDULE_TYPE_LABELS,
+  SCHEDULE_TYPE_COLORS,
 } from '@/lib/types'
 
 export default function Home() {
@@ -51,21 +54,21 @@ export default function Home() {
     })
   }
 
-  const getUpcomingEventType = (collab: DashboardStats['upcomingSchedules'][0]) => {
-    const now = new Date()
-    const shooting = collab.shootingDate ? new Date(collab.shootingDate) : null
-    const progress = collab.progressDate ? new Date(collab.progressDate) : null
-    const upload = collab.uploadDeadline ? new Date(collab.uploadDeadline) : null
-
-    const events = [
-      { type: 'shooting', date: shooting, label: '촬영', icon: Camera },
-      { type: 'progress', date: progress, label: '경과사진', icon: Camera },
-      { type: 'upload', date: upload, label: '업로드', icon: Upload },
-    ].filter((e) => e.date && e.date >= now)
-
-    events.sort((a, b) => (a.date!.getTime() - b.date!.getTime()))
-
-    return events[0] || null
+  const getTypeIcon = (type: ScheduleType) => {
+    switch (type) {
+      case 'SHOOTING':
+        return Camera
+      case 'PROGRESS':
+        return Image
+      case 'UPLOAD':
+        return Upload
+      case 'MEETING':
+        return Users
+      case 'REVIEW':
+        return FileCheck
+      default:
+        return Calendar
+    }
   }
 
   return (
@@ -302,38 +305,38 @@ export default function Home() {
               </div>
             ) : (
               <div className="space-y-3">
-                {stats.upcomingSchedules.map((collab) => {
-                  const event = getUpcomingEventType(collab)
-                  if (!event) return null
+                {stats.upcomingSchedules.map((schedule) => {
+                  const IconComponent = getTypeIcon(schedule.type)
 
                   return (
                     <div
-                      key={collab.id}
+                      key={schedule.id}
                       className="flex items-center justify-between p-3 border rounded-lg"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-gray-100 rounded-lg">
-                          <event.icon className="h-4 w-4 text-gray-600" />
+                        <div className={`p-2 rounded-lg ${SCHEDULE_TYPE_COLORS[schedule.type]}`}>
+                          <IconComponent className="h-4 w-4" />
                         </div>
                         <div>
-                          <div className="font-medium">{event.label}</div>
+                          <div className="font-medium">{SCHEDULE_TYPE_LABELS[schedule.type]}</div>
                           <Link
-                            href={`/influencers/${collab.influencer.id}`}
+                            href={`/influencers/${schedule.collaboration.influencer.id}`}
                             className="text-sm text-gray-500 hover:underline"
                           >
-                            {collab.influencer.name}
+                            {schedule.collaboration.influencer.nickname || schedule.collaboration.influencer.name}
                           </Link>
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="text-sm font-medium">
-                          {formatDate(event.date)}
+                        <div className="text-sm font-medium flex items-center gap-1">
+                          <Clock className="h-3 w-3" />
+                          {formatDate(schedule.scheduledDate)}
                         </div>
                         <Link
-                          href={`/campaigns/${collab.campaign.id}`}
+                          href={`/campaigns/${schedule.collaboration.campaign.id}`}
                           className="text-xs text-gray-500 hover:underline"
                         >
-                          {collab.campaign.name}
+                          {schedule.collaboration.campaign.name}
                         </Link>
                       </div>
                     </div>

@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import {
@@ -41,12 +42,23 @@ import {
   DollarSign,
   Users,
   Building,
+  Camera,
+  Upload,
+  Image,
+  FileCheck,
+  Clock,
+  ChevronDown,
+  ChevronUp,
+  X,
 } from 'lucide-react'
 import {
   type CampaignDetail,
   type InfluencerListItem,
   type CollaborationStatus,
   type FeeType,
+  type ScheduleWithRelations,
+  type ScheduleType,
+  type ScheduleStatus,
   CAMPAIGN_STATUS_LABELS,
   CAMPAIGN_STATUS_COLORS,
   CAMPAIGN_TYPE_LABELS,
@@ -55,6 +67,10 @@ import {
   COLLABORATION_STATUS_LABELS,
   COLLABORATION_STATUS_COLORS,
   FEE_TYPE_LABELS,
+  SCHEDULE_TYPE_LABELS,
+  SCHEDULE_TYPE_COLORS,
+  SCHEDULE_STATUS_LABELS,
+  SCHEDULE_STATUS_COLORS,
 } from '@/lib/types'
 
 export default function CampaignDetailPage({
@@ -65,39 +81,57 @@ export default function CampaignDetailPage({
   const { id } = use(params)
   const router = useRouter()
   const [campaign, setCampaign] = useState<CampaignDetail | null>(null)
+  const [schedules, setSchedules] = useState<ScheduleWithRelations[]>([])
   const [loading, setLoading] = useState(true)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [addInfluencerDialogOpen, setAddInfluencerDialogOpen] = useState(false)
-  const [availableInfluencers, setAvailableInfluencers] = useState<
-    InfluencerListItem[]
-  >([])
+  const [addScheduleDialogOpen, setAddScheduleDialogOpen] = useState(false)
+  const [selectedCollaborationId, setSelectedCollaborationId] = useState<string | null>(null)
+  const [expandedCollabs, setExpandedCollabs] = useState<Set<string>>(new Set())
+  const [availableInfluencers, setAvailableInfluencers] = useState<InfluencerListItem[]>([])
 
   // 새 협업 폼 데이터
   const [newCollaboration, setNewCollaboration] = useState({
     influencerId: '',
     fee: '',
     feeType: 'FIXED' as FeeType,
-    shootingDate: '',
-    progressDate: '',
-    uploadDeadline: '',
     status: 'CONTACTED' as CollaborationStatus,
   })
 
+  // 새 일정 폼 데이터
+  const [newSchedule, setNewSchedule] = useState({
+    type: 'SHOOTING' as ScheduleType,
+    title: '',
+    scheduledDate: '',
+    scheduledTime: '',
+    notes: '',
+  })
+
   useEffect(() => {
-    fetchCampaign()
+    fetchData()
   }, [id])
 
-  const fetchCampaign = async () => {
+  const fetchData = async () => {
     try {
-      const response = await fetch(`/api/campaigns/${id}`)
-      if (response.ok) {
-        const data = await response.json()
-        setCampaign(data)
+      const [campaignRes, schedulesRes] = await Promise.all([
+        fetch(`/api/campaigns/${id}`),
+        fetch(`/api/schedules?campaignId=${id}`),
+      ])
+
+      if (campaignRes.ok) {
+        const campaignData = await campaignRes.json()
+        setCampaign(campaignData)
       } else {
         router.push('/campaigns')
+        return
+      }
+
+      if (schedulesRes.ok) {
+        const schedulesData = await schedulesRes.json()
+        setSchedules(Array.isArray(schedulesData) ? schedulesData : [])
       }
     } catch (error) {
-      console.error('Failed to fetch campaign:', error)
+      console.error('Failed to fetch data:', error)
       router.push('/campaigns')
     } finally {
       setLoading(false)
@@ -109,9 +143,7 @@ export default function CampaignDetailPage({
       const response = await fetch('/api/influencers')
       if (response.ok) {
         const data = await response.json()
-        // 이미 협업 중인 인플루언서 제외
-        const existingIds =
-          campaign?.collaborations.map((c) => c.influencer.id) || []
+        const existingIds = campaign?.collaborations.map((c) => c.influencer.id) || []
         const available = data.filter(
           (i: InfluencerListItem) => !existingIds.includes(i.id)
         )
@@ -122,11 +154,15 @@ export default function CampaignDetailPage({
     }
   }
 
+  const getCollabSchedules = (collaborationId: string): ScheduleWithRelations[] => {
+    return schedules
+      .filter((s) => s.collaborationId === collaborationId)
+      .sort((a, b) => new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime())
+  }
+
   const handleDelete = async () => {
     try {
-      const response = await fetch(`/api/campaigns/${id}`, {
-        method: 'DELETE',
-      })
+      const response = await fetch(`/api/campaigns/${id}`, { method: 'DELETE' })
       if (response.ok) {
         router.push('/campaigns')
       } else {
@@ -152,15 +188,6 @@ export default function CampaignDetailPage({
           influencerId: newCollaboration.influencerId,
           fee: newCollaboration.fee ? parseFloat(newCollaboration.fee) : null,
           feeType: newCollaboration.feeType,
-          shootingDate: newCollaboration.shootingDate
-            ? new Date(newCollaboration.shootingDate)
-            : null,
-          progressDate: newCollaboration.progressDate
-            ? new Date(newCollaboration.progressDate)
-            : null,
-          uploadDeadline: newCollaboration.uploadDeadline
-            ? new Date(newCollaboration.uploadDeadline)
-            : null,
           status: newCollaboration.status,
         }),
       })
@@ -171,17 +198,85 @@ export default function CampaignDetailPage({
           influencerId: '',
           fee: '',
           feeType: 'FIXED',
-          shootingDate: '',
-          progressDate: '',
-          uploadDeadline: '',
           status: 'CONTACTED',
         })
-        fetchCampaign()
+        fetchData()
       } else {
         alert('인플루언서 추가에 실패했습니다.')
       }
     } catch {
       alert('오류가 발생했습니다.')
+    }
+  }
+
+  const handleAddSchedule = async () => {
+    if (!selectedCollaborationId || !newSchedule.scheduledDate) {
+      alert('필수 항목을 입력해주세요.')
+      return
+    }
+
+    try {
+      const response = await fetch('/api/schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collaborationId: selectedCollaborationId,
+          type: newSchedule.type,
+          title: newSchedule.title || null,
+          scheduledDate: new Date(newSchedule.scheduledDate),
+          scheduledTime: newSchedule.scheduledTime || null,
+          notes: newSchedule.notes || null,
+        }),
+      })
+
+      if (response.ok) {
+        setAddScheduleDialogOpen(false)
+        setNewSchedule({
+          type: 'SHOOTING',
+          title: '',
+          scheduledDate: '',
+          scheduledTime: '',
+          notes: '',
+        })
+        setSelectedCollaborationId(null)
+        fetchData()
+      } else {
+        alert('일정 추가에 실패했습니다.')
+      }
+    } catch {
+      alert('오류가 발생했습니다.')
+    }
+  }
+
+  const handleUpdateScheduleStatus = async (scheduleId: string, status: ScheduleStatus) => {
+    try {
+      const response = await fetch(`/api/schedules/${scheduleId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+
+      if (response.ok) {
+        fetchData()
+      }
+    } catch (error) {
+      console.error('Failed to update schedule status:', error)
+    }
+  }
+
+  const handleDeleteSchedule = async (scheduleId: string) => {
+    if (!confirm('이 일정을 삭제하시겠습니까?')) return
+
+    try {
+      const response = await fetch(`/api/schedules/${scheduleId}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        fetchData()
+      }
+    } catch (error) {
+      console.error('Failed to delete schedule:', error)
     }
   }
 
@@ -197,16 +292,43 @@ export default function CampaignDetailPage({
       })
 
       if (response.ok) {
-        fetchCampaign()
+        fetchData()
       }
     } catch (error) {
       console.error('Failed to update status:', error)
     }
   }
 
+  const toggleCollabExpand = (collabId: string) => {
+    setExpandedCollabs((prev) => {
+      const next = new Set(prev)
+      if (next.has(collabId)) {
+        next.delete(collabId)
+      } else {
+        next.add(collabId)
+      }
+      return next
+    })
+  }
+
+  const openAddScheduleDialog = (collaborationId: string) => {
+    setSelectedCollaborationId(collaborationId)
+    setAddScheduleDialogOpen(true)
+  }
+
   const formatDate = (date: Date | string | null) => {
     if (!date) return '-'
     return new Date(date).toLocaleDateString('ko-KR')
+  }
+
+  const formatDateTime = (date: Date | string, time?: string | null) => {
+    const d = new Date(date)
+    const dateStr = d.toLocaleDateString('ko-KR', {
+      month: 'short',
+      day: 'numeric',
+      weekday: 'short',
+    })
+    return time ? `${dateStr} ${time}` : dateStr
   }
 
   const formatBudget = (budget: unknown) => {
@@ -217,6 +339,23 @@ export default function CampaignDetailPage({
       currency: 'KRW',
       maximumFractionDigits: 0,
     }).format(num)
+  }
+
+  const getTypeIcon = (type: ScheduleType) => {
+    switch (type) {
+      case 'SHOOTING':
+        return <Camera className="h-4 w-4" />
+      case 'PROGRESS':
+        return <Image className="h-4 w-4" />
+      case 'UPLOAD':
+        return <Upload className="h-4 w-4" />
+      case 'MEETING':
+        return <Users className="h-4 w-4" />
+      case 'REVIEW':
+        return <FileCheck className="h-4 w-4" />
+      default:
+        return <Calendar className="h-4 w-4" />
+    }
   }
 
   if (loading) {
@@ -273,10 +412,7 @@ export default function CampaignDetailPage({
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setDeleteDialogOpen(false)}
-                >
+                <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
                   취소
                 </Button>
                 <Button variant="destructive" onClick={handleDelete}>
@@ -354,9 +490,7 @@ export default function CampaignDetailPage({
             <CardTitle>설명</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-gray-700 whitespace-pre-wrap">
-              {campaign.description}
-            </p>
+            <p className="text-gray-700 whitespace-pre-wrap">{campaign.description}</p>
           </CardContent>
         </Card>
       )}
@@ -391,10 +525,7 @@ export default function CampaignDetailPage({
                   <Select
                     value={newCollaboration.influencerId}
                     onValueChange={(value) =>
-                      setNewCollaboration((prev) => ({
-                        ...prev,
-                        influencerId: value,
-                      }))
+                      setNewCollaboration((prev) => ({ ...prev, influencerId: value }))
                     }
                   >
                     <SelectTrigger>
@@ -419,10 +550,7 @@ export default function CampaignDetailPage({
                       type="number"
                       value={newCollaboration.fee}
                       onChange={(e) =>
-                        setNewCollaboration((prev) => ({
-                          ...prev,
-                          fee: e.target.value,
-                        }))
+                        setNewCollaboration((prev) => ({ ...prev, fee: e.target.value }))
                       }
                       placeholder="500000"
                     />
@@ -432,10 +560,7 @@ export default function CampaignDetailPage({
                     <Select
                       value={newCollaboration.feeType}
                       onValueChange={(value: FeeType) =>
-                        setNewCollaboration((prev) => ({
-                          ...prev,
-                          feeType: value,
-                        }))
+                        setNewCollaboration((prev) => ({ ...prev, feeType: value }))
                       }
                     >
                       <SelectTrigger>
@@ -451,54 +576,9 @@ export default function CampaignDetailPage({
                     </Select>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label>촬영일</Label>
-                    <Input
-                      type="date"
-                      value={newCollaboration.shootingDate}
-                      onChange={(e) =>
-                        setNewCollaboration((prev) => ({
-                          ...prev,
-                          shootingDate: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>경과사진일</Label>
-                    <Input
-                      type="date"
-                      value={newCollaboration.progressDate}
-                      onChange={(e) =>
-                        setNewCollaboration((prev) => ({
-                          ...prev,
-                          progressDate: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>업로드 마감</Label>
-                    <Input
-                      type="date"
-                      value={newCollaboration.uploadDeadline}
-                      onChange={(e) =>
-                        setNewCollaboration((prev) => ({
-                          ...prev,
-                          uploadDeadline: e.target.value,
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
               </div>
               <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setAddInfluencerDialogOpen(false)}
-                >
+                <Button variant="outline" onClick={() => setAddInfluencerDialogOpen(false)}>
                   취소
                 </Button>
                 <Button onClick={handleAddInfluencer}>추가</Button>
@@ -514,77 +594,264 @@ export default function CampaignDetailPage({
               <p className="text-sm">위의 버튼을 눌러 인플루언서를 추가하세요.</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>인플루언서</TableHead>
-                  <TableHead>티어</TableHead>
-                  <TableHead>상태</TableHead>
-                  <TableHead>협찬비</TableHead>
-                  <TableHead>촬영일</TableHead>
-                  <TableHead>업로드 마감</TableHead>
-                  <TableHead>콘텐츠</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaign.collaborations.map((collab) => (
-                  <TableRow key={collab.id}>
-                    <TableCell>
-                      <Link
-                        href={`/influencers/${collab.influencer.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {collab.influencer.name}
-                        {collab.influencer.nickname && (
-                          <span className="text-gray-500 ml-1">
-                            @{collab.influencer.nickname}
-                          </span>
-                        )}
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={TIER_COLORS[collab.influencer.tier]}>
-                        {TIER_LABELS[collab.influencer.tier]}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Select
-                        value={collab.status}
-                        onValueChange={(value: CollaborationStatus) =>
-                          handleUpdateCollaborationStatus(collab.id, value)
-                        }
-                      >
-                        <SelectTrigger className="w-[140px]">
-                          <Badge
-                            className={COLLABORATION_STATUS_COLORS[collab.status]}
-                          >
-                            {COLLABORATION_STATUS_LABELS[collab.status]}
+            <div className="space-y-4">
+              {campaign.collaborations.map((collab) => {
+                const collabSchedules = getCollabSchedules(collab.id)
+                const isExpanded = expandedCollabs.has(collab.id)
+
+                return (
+                  <div key={collab.id} className="border rounded-lg overflow-hidden">
+                    {/* 협업 헤더 */}
+                    <div
+                      className="p-4 bg-gray-50 cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => toggleCollabExpand(collab.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            {isExpanded ? (
+                              <ChevronUp className="h-4 w-4 text-gray-400" />
+                            ) : (
+                              <ChevronDown className="h-4 w-4 text-gray-400" />
+                            )}
+                            <Link
+                              href={`/influencers/${collab.influencer.id}`}
+                              className="font-medium hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {collab.influencer.name}
+                              {collab.influencer.nickname && (
+                                <span className="text-gray-500 ml-1">
+                                  @{collab.influencer.nickname}
+                                </span>
+                              )}
+                            </Link>
+                          </div>
+                          <Badge className={TIER_COLORS[collab.influencer.tier]}>
+                            {TIER_LABELS[collab.influencer.tier]}
                           </Badge>
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(
-                            Object.keys(
-                              COLLABORATION_STATUS_LABELS
-                            ) as CollaborationStatus[]
-                          ).map((status) => (
-                            <SelectItem key={status} value={status}>
-                              {COLLABORATION_STATUS_LABELS[status]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                    <TableCell>{formatBudget(collab.fee)}</TableCell>
-                    <TableCell>{formatDate(collab.shootingDate)}</TableCell>
-                    <TableCell>{formatDate(collab.uploadDeadline)}</TableCell>
-                    <TableCell>{collab.contents.length}개</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                          <span className="text-sm text-gray-500">
+                            {formatBudget(collab.fee)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                          <Badge className="text-xs">
+                            {collabSchedules.length}개 일정
+                          </Badge>
+                          <Select
+                            value={collab.status}
+                            onValueChange={(value: CollaborationStatus) =>
+                              handleUpdateCollaborationStatus(collab.id, value)
+                            }
+                          >
+                            <SelectTrigger className="w-[140px]">
+                              <Badge className={COLLABORATION_STATUS_COLORS[collab.status]}>
+                                {COLLABORATION_STATUS_LABELS[collab.status]}
+                              </Badge>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {(Object.keys(COLLABORATION_STATUS_LABELS) as CollaborationStatus[]).map(
+                                (status) => (
+                                  <SelectItem key={status} value={status}>
+                                    {COLLABORATION_STATUS_LABELS[status]}
+                                  </SelectItem>
+                                )
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 일정 목록 (확장시) */}
+                    {isExpanded && (
+                      <div className="p-4 border-t">
+                        <div className="flex items-center justify-between mb-3">
+                          <h4 className="text-sm font-medium text-gray-700">일정 관리</h4>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openAddScheduleDialog(collab.id)}
+                          >
+                            <Plus className="h-3 w-3 mr-1" />
+                            일정 추가
+                          </Button>
+                        </div>
+
+                        {collabSchedules.length === 0 ? (
+                          <div className="text-center py-6 text-gray-400 text-sm border rounded-lg border-dashed">
+                            등록된 일정이 없습니다
+                          </div>
+                        ) : (
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-[120px]">유형</TableHead>
+                                <TableHead>제목</TableHead>
+                                <TableHead>일시</TableHead>
+                                <TableHead className="w-[140px]">상태</TableHead>
+                                <TableHead className="w-[60px]"></TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {collabSchedules.map((schedule) => (
+                                <TableRow key={schedule.id}>
+                                  <TableCell>
+                                    <Badge className={SCHEDULE_TYPE_COLORS[schedule.type]}>
+                                      {getTypeIcon(schedule.type)}
+                                      <span className="ml-1">
+                                        {SCHEDULE_TYPE_LABELS[schedule.type]}
+                                      </span>
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell>
+                                    {schedule.title || '-'}
+                                    {schedule.notes && (
+                                      <p className="text-xs text-gray-400 mt-1 truncate max-w-[200px]">
+                                        {schedule.notes}
+                                      </p>
+                                    )}
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex items-center gap-1 text-sm">
+                                      <Clock className="h-3 w-3 text-gray-400" />
+                                      {formatDateTime(schedule.scheduledDate, schedule.scheduledTime)}
+                                    </div>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Select
+                                      value={schedule.status}
+                                      onValueChange={(value: ScheduleStatus) =>
+                                        handleUpdateScheduleStatus(schedule.id, value)
+                                      }
+                                    >
+                                      <SelectTrigger className="h-7 text-xs">
+                                        <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
+                                          {SCHEDULE_STATUS_LABELS[schedule.status]}
+                                        </Badge>
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {(Object.keys(SCHEDULE_STATUS_LABELS) as ScheduleStatus[]).map(
+                                          (status) => (
+                                            <SelectItem key={status} value={status}>
+                                              {SCHEDULE_STATUS_LABELS[status]}
+                                            </SelectItem>
+                                          )
+                                        )}
+                                      </SelectContent>
+                                    </Select>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-gray-400 hover:text-red-500"
+                                      onClick={() => handleDeleteSchedule(schedule.id)}
+                                    >
+                                      <X className="h-4 w-4" />
+                                    </Button>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           )}
         </CardContent>
       </Card>
+
+      {/* 일정 추가 다이얼로그 */}
+      <Dialog open={addScheduleDialogOpen} onOpenChange={setAddScheduleDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>일정 추가</DialogTitle>
+            <DialogDescription>
+              새로운 일정을 추가합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>일정 유형 *</Label>
+                <Select
+                  value={newSchedule.type}
+                  onValueChange={(value: ScheduleType) =>
+                    setNewSchedule((prev) => ({ ...prev, type: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(SCHEDULE_TYPE_LABELS) as ScheduleType[]).map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {SCHEDULE_TYPE_LABELS[type]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>제목</Label>
+                <Input
+                  value={newSchedule.title}
+                  onChange={(e) =>
+                    setNewSchedule((prev) => ({ ...prev, title: e.target.value }))
+                  }
+                  placeholder="예: 1차 촬영"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>날짜 *</Label>
+                <Input
+                  type="date"
+                  value={newSchedule.scheduledDate}
+                  onChange={(e) =>
+                    setNewSchedule((prev) => ({ ...prev, scheduledDate: e.target.value }))
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>시간</Label>
+                <Input
+                  type="time"
+                  value={newSchedule.scheduledTime}
+                  onChange={(e) =>
+                    setNewSchedule((prev) => ({ ...prev, scheduledTime: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>메모</Label>
+              <Textarea
+                value={newSchedule.notes}
+                onChange={(e) =>
+                  setNewSchedule((prev) => ({ ...prev, notes: e.target.value }))
+                }
+                placeholder="추가 정보를 입력하세요"
+                rows={3}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddScheduleDialogOpen(false)}>
+              취소
+            </Button>
+            <Button onClick={handleAddSchedule}>추가</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -12,14 +12,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Calendar, User, Megaphone, GripVertical } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Calendar,
+  User,
+  Megaphone,
+  GripVertical,
+  Camera,
+  Upload,
+  Image,
+  Users,
+  FileCheck,
+  Clock,
+  Plus,
+  ChevronDown,
+} from 'lucide-react'
 import {
   type CollaborationWithRelations,
   type CollaborationStatus,
+  type ScheduleWithRelations,
+  type ScheduleType,
   COLLABORATION_STATUS_LABELS,
   COLLABORATION_STATUS_COLORS,
   TIER_LABELS,
   TIER_COLORS,
+  SCHEDULE_TYPE_LABELS,
+  SCHEDULE_TYPE_COLORS,
+  SCHEDULE_STATUS_LABELS,
+  SCHEDULE_STATUS_COLORS,
 } from '@/lib/types'
 
 // 칸반 컬럼 정의
@@ -34,29 +59,69 @@ const KANBAN_COLUMNS: { status: CollaborationStatus; label: string }[] = [
 ]
 
 export default function KanbanBoardPage() {
-  const [collaborations, setCollaborations] = useState<
-    CollaborationWithRelations[]
-  >([])
+  const [collaborations, setCollaborations] = useState<CollaborationWithRelations[]>([])
+  const [schedules, setSchedules] = useState<ScheduleWithRelations[]>([])
   const [loading, setLoading] = useState(true)
   const [draggedItem, setDraggedItem] = useState<string | null>(null)
+  const [selectedCollab, setSelectedCollab] = useState<CollaborationWithRelations | null>(null)
+  const [collabSchedules, setCollabSchedules] = useState<ScheduleWithRelations[]>([])
 
   useEffect(() => {
-    fetchCollaborations()
+    fetchData()
   }, [])
 
-  const fetchCollaborations = async () => {
+  const fetchData = async () => {
     try {
-      const response = await fetch('/api/collaborations')
-      const data = await response.json()
-      // 취소된 항목 제외
+      const [collabResponse, scheduleResponse] = await Promise.all([
+        fetch('/api/collaborations'),
+        fetch('/api/schedules'),
+      ])
+      const collabData = await collabResponse.json()
+      const scheduleData = await scheduleResponse.json()
+
       setCollaborations(
-        data.filter((c: CollaborationWithRelations) => c.status !== 'CANCELLED')
+        collabData.filter((c: CollaborationWithRelations) => c.status !== 'CANCELLED')
       )
+      setSchedules(Array.isArray(scheduleData) ? scheduleData : [])
     } catch (error) {
-      console.error('Failed to fetch collaborations:', error)
+      console.error('Failed to fetch data:', error)
     } finally {
       setLoading(false)
     }
+  }
+
+  // 협업별 일정 맵
+  const schedulesByCollaboration = useMemo(() => {
+    const map: Record<string, ScheduleWithRelations[]> = {}
+    schedules.forEach((schedule) => {
+      const collabId = schedule.collaborationId
+      if (!map[collabId]) {
+        map[collabId] = []
+      }
+      map[collabId].push(schedule)
+    })
+    // 각 협업의 일정을 날짜순으로 정렬
+    Object.keys(map).forEach((key) => {
+      map[key].sort(
+        (a, b) =>
+          new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
+      )
+    })
+    return map
+  }, [schedules])
+
+  const getCollabSchedules = (collaborationId: string): ScheduleWithRelations[] => {
+    return schedulesByCollaboration[collaborationId] || []
+  }
+
+  const getUpcomingSchedule = (collaborationId: string): ScheduleWithRelations | null => {
+    const collabSchedules = getCollabSchedules(collaborationId)
+    const now = new Date()
+    return (
+      collabSchedules.find(
+        (s) => new Date(s.scheduledDate) >= now && s.status !== 'COMPLETED' && s.status !== 'CANCELLED'
+      ) || null
+    )
   }
 
   const handleDragStart = (e: React.DragEvent, collaborationId: string) => {
@@ -117,6 +182,11 @@ export default function KanbanBoardPage() {
     }
   }
 
+  const handleCardClick = (collab: CollaborationWithRelations) => {
+    setSelectedCollab(collab)
+    setCollabSchedules(getCollabSchedules(collab.id))
+  }
+
   const formatDate = (date: Date | string | null) => {
     if (!date) return null
     return new Date(date).toLocaleDateString('ko-KR', {
@@ -125,9 +195,51 @@ export default function KanbanBoardPage() {
     })
   }
 
+  const formatDateTime = (date: Date | string, time?: string | null) => {
+    const d = new Date(date)
+    const dateStr = d.toLocaleDateString('ko-KR', {
+      month: 'short',
+      day: 'numeric',
+      weekday: 'short',
+    })
+    return time ? `${dateStr} ${time}` : dateStr
+  }
+
   const getColumnCollaborations = (status: CollaborationStatus) => {
     return collaborations.filter((c) => c.status === status)
   }
+
+  const getTypeIcon = (type: ScheduleType) => {
+    switch (type) {
+      case 'SHOOTING':
+        return <Camera className="h-3 w-3" />
+      case 'PROGRESS':
+        return <Image className="h-3 w-3" />
+      case 'UPLOAD':
+        return <Upload className="h-3 w-3" />
+      case 'MEETING':
+        return <Users className="h-3 w-3" />
+      case 'REVIEW':
+        return <FileCheck className="h-3 w-3" />
+      default:
+        return <Calendar className="h-3 w-3" />
+    }
+  }
+
+  // 통계 계산
+  const stats = useMemo(() => {
+    const total = collaborations.length
+    const byStatus = KANBAN_COLUMNS.reduce((acc, col) => {
+      acc[col.status] = getColumnCollaborations(col.status).length
+      return acc
+    }, {} as Record<string, number>)
+
+    const upcomingCount = collaborations.filter(
+      (c) => getUpcomingSchedule(c.id) !== null
+    ).length
+
+    return { total, byStatus, upcomingCount }
+  }, [collaborations, schedulesByCollaboration])
 
   if (loading) {
     return (
@@ -156,6 +268,40 @@ export default function KanbanBoardPage() {
         </div>
       </div>
 
+      {/* 통계 요약 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold">{stats.total}</div>
+            <div className="text-sm text-gray-500">전체 협업</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold text-blue-600">
+              {stats.byStatus['NEGOTIATING'] || 0}
+            </div>
+            <div className="text-sm text-gray-500">협의 중</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold text-green-600">
+              {stats.byStatus['CONFIRMED'] || 0}
+            </div>
+            <div className="text-sm text-gray-500">확정</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="text-2xl font-bold text-orange-600">
+              {stats.upcomingCount}
+            </div>
+            <div className="text-sm text-gray-500">예정된 일정</div>
+          </CardContent>
+        </Card>
+      </div>
+
       {collaborations.length === 0 ? (
         <Card>
           <CardContent className="py-16 text-center text-gray-500">
@@ -176,113 +322,248 @@ export default function KanbanBoardPage() {
           {KANBAN_COLUMNS.map((column) => (
             <div
               key={column.status}
-              className="flex-shrink-0 w-72"
+              className="flex-shrink-0 w-80"
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, column.status)}
             >
-              <Card className="h-full">
-                <CardHeader className="pb-3">
+              <Card className="h-full bg-gray-50">
+                <CardHeader className="pb-3 bg-white rounded-t-lg border-b">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-medium">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          COLLABORATION_STATUS_COLORS[column.status]
+                            .replace('bg-', 'bg-')
+                            .split(' ')[0]
+                        }`}
+                      />
                       {column.label}
                     </CardTitle>
-                    <Badge variant="secondary">
+                    <Badge variant="secondary" className="font-bold">
                       {getColumnCollaborations(column.status).length}
                     </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-3 min-h-[400px]">
-                  {getColumnCollaborations(column.status).map((collab) => (
-                    <div
-                      key={collab.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, collab.id)}
-                      className={`p-3 bg-white border rounded-lg shadow-sm cursor-move hover:shadow-md transition-shadow ${
-                        draggedItem === collab.id ? 'opacity-50' : ''
-                      }`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <GripVertical className="h-4 w-4 text-gray-400 mt-1 flex-shrink-0" />
-                        <div className="flex-1 min-w-0">
-                          {/* 인플루언서 정보 */}
-                          <div className="flex items-center gap-2 mb-2">
-                            <User className="h-4 w-4 text-gray-400" />
+                <CardContent className="space-y-3 min-h-[500px] p-3">
+                  {getColumnCollaborations(column.status).map((collab) => {
+                    const collabScheduleList = getCollabSchedules(collab.id)
+                    const upcomingSchedule = getUpcomingSchedule(collab.id)
+
+                    return (
+                      <div
+                        key={collab.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, collab.id)}
+                        onClick={() => handleCardClick(collab)}
+                        className={`p-3 bg-white border rounded-lg shadow-sm cursor-move hover:shadow-md transition-all hover:border-blue-300 ${
+                          draggedItem === collab.id ? 'opacity-50 scale-95' : ''
+                        }`}
+                      >
+                        <div className="flex items-start gap-2">
+                          <GripVertical className="h-4 w-4 text-gray-300 mt-1 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            {/* 인플루언서 정보 */}
+                            <div className="flex items-center gap-2 mb-2">
+                              <Link
+                                href={`/influencers/${collab.influencer.id}`}
+                                className="font-medium text-sm hover:underline truncate"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {collab.influencer.nickname || collab.influencer.name}
+                              </Link>
+                              <Badge
+                                className={`${TIER_COLORS[collab.influencer.tier]} text-xs`}
+                              >
+                                {TIER_LABELS[collab.influencer.tier]}
+                              </Badge>
+                            </div>
+
+                            {/* 캠페인 정보 */}
                             <Link
-                              href={`/influencers/${collab.influencer.id}`}
-                              className="font-medium text-sm hover:underline truncate"
+                              href={`/campaigns/${collab.campaign.id}`}
+                              className="text-xs text-gray-500 hover:underline block truncate"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              {collab.influencer.name}
+                              <Megaphone className="h-3 w-3 inline mr-1" />
+                              {collab.campaign.name}
                             </Link>
-                            <Badge
-                              className={`${
-                                TIER_COLORS[collab.influencer.tier]
-                              } text-xs`}
-                            >
-                              {TIER_LABELS[collab.influencer.tier]}
-                            </Badge>
-                          </div>
 
-                          {/* 캠페인 정보 */}
-                          <Link
-                            href={`/campaigns/${collab.campaign.id}`}
-                            className="text-xs text-gray-500 hover:underline block truncate"
-                          >
-                            <Megaphone className="h-3 w-3 inline mr-1" />
-                            {collab.campaign.name}
-                          </Link>
-
-                          {/* 일정 정보 */}
-                          <div className="mt-2 space-y-1">
-                            {collab.shootingDate && (
-                              <div className="text-xs text-gray-500 flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
-                                촬영: {formatDate(collab.shootingDate)}
+                            {/* 일정 정보 */}
+                            {collabScheduleList.length > 0 && (
+                              <div className="mt-2 space-y-1">
+                                {upcomingSchedule ? (
+                                  <div
+                                    className={`text-xs p-1.5 rounded flex items-center gap-1.5 ${
+                                      SCHEDULE_TYPE_COLORS[upcomingSchedule.type]
+                                    }`}
+                                  >
+                                    {getTypeIcon(upcomingSchedule.type)}
+                                    <span>
+                                      {SCHEDULE_TYPE_LABELS[upcomingSchedule.type]}
+                                    </span>
+                                    <span className="text-gray-600">
+                                      {formatDate(upcomingSchedule.scheduledDate)}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="text-xs text-gray-400">
+                                    예정된 일정 없음
+                                  </div>
+                                )}
+                                {collabScheduleList.length > 1 && (
+                                  <div className="text-xs text-gray-400 flex items-center gap-1">
+                                    <ChevronDown className="h-3 w-3" />
+                                    외 {collabScheduleList.length - 1}개 일정
+                                  </div>
+                                )}
                               </div>
                             )}
-                            {collab.uploadDeadline && (
-                              <div className="text-xs text-gray-500 flex items-center gap-1">
-                                <Calendar className="h-3 w-3" />
-                                마감: {formatDate(collab.uploadDeadline)}
-                              </div>
-                            )}
-                          </div>
 
-                          {/* 상태 변경 드롭다운 */}
-                          <div className="mt-3">
-                            <Select
-                              value={collab.status}
-                              onValueChange={(value: CollaborationStatus) =>
-                                handleStatusChange(collab.id, value)
-                              }
-                            >
-                              <SelectTrigger className="h-7 text-xs">
-                                <Badge
-                                  className={`${
-                                    COLLABORATION_STATUS_COLORS[collab.status]
-                                  } text-xs`}
-                                >
-                                  {COLLABORATION_STATUS_LABELS[collab.status]}
-                                </Badge>
-                              </SelectTrigger>
-                              <SelectContent>
-                                {KANBAN_COLUMNS.map((col) => (
-                                  <SelectItem key={col.status} value={col.status}>
-                                    {col.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            {/* 상태 변경 드롭다운 */}
+                            <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                              <Select
+                                value={collab.status}
+                                onValueChange={(value: CollaborationStatus) =>
+                                  handleStatusChange(collab.id, value)
+                                }
+                              >
+                                <SelectTrigger className="h-7 text-xs">
+                                  <SelectValue>
+                                    <Badge
+                                      className={`${
+                                        COLLABORATION_STATUS_COLORS[collab.status]
+                                      } text-xs`}
+                                    >
+                                      {COLLABORATION_STATUS_LABELS[collab.status]}
+                                    </Badge>
+                                  </SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {KANBAN_COLUMNS.map((col) => (
+                                    <SelectItem key={col.status} value={col.status}>
+                                      {col.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </CardContent>
               </Card>
             </div>
           ))}
         </div>
       )}
+
+      {/* 협업 상세 다이얼로그 */}
+      <Dialog open={!!selectedCollab} onOpenChange={() => setSelectedCollab(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" />
+              {selectedCollab?.influencer.nickname || selectedCollab?.influencer.name}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedCollab && (
+            <div className="space-y-4">
+              {/* 협업 정보 */}
+              <div className="flex items-center justify-between">
+                <Link
+                  href={`/campaigns/${selectedCollab.campaign.id}`}
+                  className="text-sm text-blue-600 hover:underline flex items-center gap-1"
+                >
+                  <Megaphone className="h-4 w-4" />
+                  {selectedCollab.campaign.name}
+                </Link>
+                <Badge className={COLLABORATION_STATUS_COLORS[selectedCollab.status]}>
+                  {COLLABORATION_STATUS_LABELS[selectedCollab.status]}
+                </Badge>
+              </div>
+
+              {/* 일정 목록 */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="font-medium text-sm">일정 목록</h4>
+                  <Link
+                    href={`/campaigns/${selectedCollab.campaign.id}`}
+                    className="text-xs text-blue-600 hover:underline"
+                  >
+                    <Plus className="h-3 w-3 inline mr-1" />
+                    일정 추가
+                  </Link>
+                </div>
+                {collabSchedules.length === 0 ? (
+                  <div className="text-center py-6 text-gray-500 text-sm border rounded-lg">
+                    등록된 일정이 없습니다
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                    {collabSchedules.map((schedule) => (
+                      <div
+                        key={schedule.id}
+                        className="p-3 border rounded-lg space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <Badge className={SCHEDULE_TYPE_COLORS[schedule.type]}>
+                            {getTypeIcon(schedule.type)}
+                            <span className="ml-1">
+                              {SCHEDULE_TYPE_LABELS[schedule.type]}
+                            </span>
+                          </Badge>
+                          <Badge className={SCHEDULE_STATUS_COLORS[schedule.status]}>
+                            {SCHEDULE_STATUS_LABELS[schedule.status]}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <Clock className="h-4 w-4" />
+                          {formatDateTime(
+                            schedule.scheduledDate,
+                            schedule.scheduledTime
+                          )}
+                        </div>
+                        {schedule.title && (
+                          <div className="text-sm font-medium">{schedule.title}</div>
+                        )}
+                        {schedule.notes && (
+                          <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+                            {schedule.notes}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* 액션 버튼 */}
+              <div className="flex gap-2 pt-2 border-t">
+                <Link
+                  href={`/influencers/${selectedCollab.influencer.id}`}
+                  className="flex-1"
+                >
+                  <Button variant="outline" className="w-full">
+                    <User className="h-4 w-4 mr-2" />
+                    인플루언서 상세
+                  </Button>
+                </Link>
+                <Link
+                  href={`/campaigns/${selectedCollab.campaign.id}`}
+                  className="flex-1"
+                >
+                  <Button variant="outline" className="w-full">
+                    <Megaphone className="h-4 w-4 mr-2" />
+                    캠페인 상세
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

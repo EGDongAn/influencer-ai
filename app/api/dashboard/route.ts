@@ -45,7 +45,7 @@ export async function GET() {
       },
     })
 
-    // 이번 주 일정
+    // 이번 주 일정 (새로운 Schedule 모델 사용)
     const startOfWeek = new Date(now)
     startOfWeek.setDate(now.getDate() - now.getDay())
     startOfWeek.setHours(0, 0, 0, 0)
@@ -53,38 +53,39 @@ export async function GET() {
     const endOfWeek = new Date(startOfWeek)
     endOfWeek.setDate(startOfWeek.getDate() + 7)
 
-    const weeklySchedule = await prisma.collaboration.findMany({
+    const weeklySchedule = await prisma.schedule.findMany({
       where: {
-        OR: [
-          {
-            shootingDate: {
-              gte: startOfWeek,
-              lt: endOfWeek,
+        scheduledDate: {
+          gte: startOfWeek,
+          lt: endOfWeek,
+        },
+        status: {
+          notIn: ['CANCELLED'],
+        },
+      },
+      include: {
+        collaboration: {
+          include: {
+            campaign: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            influencer: {
+              select: {
+                id: true,
+                name: true,
+                nickname: true,
+              },
             },
           },
-          {
-            uploadDeadline: {
-              gte: startOfWeek,
-              lt: endOfWeek,
-            },
-          },
-        ],
+        },
       },
     })
 
-    const shootingCount = weeklySchedule.filter(
-      (c) =>
-        c.shootingDate &&
-        c.shootingDate >= startOfWeek &&
-        c.shootingDate < endOfWeek
-    ).length
-
-    const uploadCount = weeklySchedule.filter(
-      (c) =>
-        c.uploadDeadline &&
-        c.uploadDeadline >= startOfWeek &&
-        c.uploadDeadline < endOfWeek
-    ).length
+    const shootingCount = weeklySchedule.filter((s) => s.type === 'SHOOTING').length
+    const uploadCount = weeklySchedule.filter((s) => s.type === 'UPLOAD').length
 
     // 콘텐츠 성과
     const contentStats = await prisma.content.aggregate({
@@ -120,40 +121,53 @@ export async function GET() {
             profileImageUrl: true,
           },
         },
+        schedules: {
+          where: {
+            status: {
+              notIn: ['COMPLETED', 'CANCELLED'],
+            },
+            scheduledDate: {
+              gte: now,
+            },
+          },
+          orderBy: {
+            scheduledDate: 'asc',
+          },
+          take: 1,
+        },
       },
       orderBy: { updatedAt: 'desc' },
       take: 5,
     })
 
-    // 다가오는 일정
-    const upcomingSchedules = await prisma.collaboration.findMany({
+    // 다가오는 일정 (새로운 Schedule 모델 사용)
+    const upcomingSchedules = await prisma.schedule.findMany({
       where: {
-        OR: [
-          { shootingDate: { gte: now } },
-          { progressDate: { gte: now } },
-          { uploadDeadline: { gte: now } },
-        ],
+        scheduledDate: { gte: now },
+        status: {
+          notIn: ['COMPLETED', 'CANCELLED'],
+        },
       },
       include: {
-        campaign: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-        influencer: {
-          select: {
-            id: true,
-            name: true,
-            nickname: true,
+        collaboration: {
+          include: {
+            campaign: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            influencer: {
+              select: {
+                id: true,
+                name: true,
+                nickname: true,
+              },
+            },
           },
         },
       },
-      orderBy: [
-        { shootingDate: 'asc' },
-        { progressDate: 'asc' },
-        { uploadDeadline: 'asc' },
-      ],
+      orderBy: { scheduledDate: 'asc' },
       take: 5,
     })
 
