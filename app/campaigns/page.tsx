@@ -52,7 +52,8 @@ export default function CampaignsPage() {
 
       const response = await fetch(`/api/campaigns?${params}`)
       const data = await response.json()
-      setCampaigns(data)
+      // API가 에러를 반환하거나 배열이 아닌 경우 빈 배열로 처리
+      setCampaigns(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Failed to fetch campaigns:', error)
     } finally {
